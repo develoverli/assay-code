@@ -1,0 +1,12 @@
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: true
+verifyDepsBeforeRun: false
+strictDepBuilds: false
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+# semver@6.3.1 (2023, required as ^6 by @babel/core) predates npm provenance, so it reads as a
+# downgrade next to the attested 7.x line. Integrity matches the registry; exempt that exact version only.
+trustPolicyExclude:
+  - semver@6.3.1

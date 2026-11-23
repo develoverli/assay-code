@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in Assay does not work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Security issues go through the Security tab, never a public issue
+        (see SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a project with …
+        2. Run …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Assay version
+      description: From the installer name, or the app's Properties / About window.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Tool or agent involved
+      description: ESLint, Semgrep, Claude, opencode… with its version if you know it.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The run log or the error shown. Remove any token, password or private path first.
+      render: text

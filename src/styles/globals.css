@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ *
+ *  Assay design tokens  (dark-first devtool: Linear / Raycast / term)
+ * ------------------------------------------------------------------ */
+@theme {
+  --color-bg: #0a0b0d;
+  --color-surface: #141619;
+  --color-surface-2: #1b1e23;
+  --color-surface-3: #22262c;
+  --color-border: #26292f;
+  --color-border-soft: #1f2227;
+
+  --color-text: #e6e8eb;
+  --color-text-2: #9ba1a9;
+  /* AA on surface / surface-2 / surface-3 (5.40 / 4.98 / 4.53) while staying
+     a clear step below text-2 */
+  --color-text-3: #868d95;
+
+  --color-accent: #7c5cff;
+  --color-accent-fg: #ffffff;
+  --color-accent-soft: #211c3d;
+
+  /* identity, deliberately not the accent: the mark is not a selection state */
+  --color-brass: #c9973f;
+
+  /* scrollbar thumb under the pointer: one step above surface-3 */
+  --color-scrollbar-hover: #2e343c;
+
+  --color-crit: #ff4d4d;
+  --color-high: #ff8a3d;
+  --color-med: #ffc53d;
+  --color-low: #4da3ff;
+  --color-info: #7a828c;
+
+  --color-success: #3dd68c;
+  --color-warn: #ffc53d;
+  --color-danger: #ff4d4d;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/* Tag palette, deliberately apart from the severity colours: a red tag is a
+   category, not a critical finding.
+   `static` because these are only read at runtime (`var(--color-tag-<name>)` in
+   `lib/tags.ts`); Tailwind drops theme variables it never sees in the source. */
+@theme static {
+  --color-tag-violet: #a48bff;
+  --color-tag-blue: #4da3ff;
+  --color-tag-teal: #3ec9c0;
+  --color-tag-green: #3dd68c;
+  --color-tag-amber: #ffc53d;
+  --color-tag-orange: #ff8a3d;
+  --color-tag-red: #ff6b6b;
+  --color-tag-pink: #ff7ac6;
+  --color-tag-slate: #9ba1a9;
+}
+
+/* ------------------------------------------------------------------ */
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* transparent so the rounded frame below shows the desktop at the corners */
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Window frame (custom chrome: the OS titlebar is off on Win/Linux)
+ * ------------------------------------------------------------------ */
+#root {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* flush against the screen edges: no corners, no seam */
+html[data-maximized="true"] #root {
+  border-radius: 0;
+  border-color: transparent;
+}
+
+/* macOS keeps its native frame, which draws its own corners and shadow */
+html[data-native-frame="true"] #root {
+  border: 0;
+  border-radius: 0;
+}
+
+/* tabular figures for data columns / metrics */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* selectable regions (logs, code, paths) */
+.selectable {
+  user-select: text;
+}
+
+/* Tag badges: one hue drives wash, edge and text. The 12% / 32% mix keeps the
+   label above 4.5:1 on every surface; change it only after re-checking contrast. */
+.tag-badge {
+  background-color: color-mix(in oklab, var(--tag) 12%, transparent);
+  border-color: color-mix(in oklab, var(--tag) 32%, transparent);
+  color: var(--tag);
+}
+.tag-badge--on {
+  background-color: color-mix(in oklab, var(--tag) 16%, transparent);
+  border-color: color-mix(in oklab, var(--tag) 60%, transparent);
+}
+.tag-badge--btn:hover {
+  background-color: color-mix(in oklab, var(--tag) 20%, transparent);
+}
+
+/* scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-3);
+  border-radius: 8px;
+  border: 2px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-hover);
+}
+
+/* focus ring (a11y: never remove) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@keyframes assay-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes assay-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.animate-in {
+  animation: assay-fade-in 180ms ease-out;
+}

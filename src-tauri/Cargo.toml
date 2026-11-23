@@ -1,0 +1,60 @@
+[package]
+name = "assay"
+version = "0.1.0"
+description = "Build, check and ship your code in one place, with local or cloud AI"
+authors = ["develoverli"]
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/develoverli/assay-code"
+publish = false
+
+[lib]
+# `_lib` keeps the lib name apart from the bin's (Windows, rust-lang/cargo#8519)
+name = "assay_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+# `watch`: Deploy's auto-upload hears the disk, since an agent never presses Save
+tauri-plugin-fs = { version = "2", features = ["watch"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-os = "2"
+tauri-plugin-notification = "2"
+# default features minus "cookies": a stored session cookie makes SonarQube
+# reject Basic-authenticated POSTs with 401 (its CSRF filter).
+tauri-plugin-http = { version = "2", default-features = false, features = ["rustls-tls", "http2", "charset", "system-proxy"] }
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+# open at login when Settings turns it on; used through invoke, no npm package
+tauri-plugin-autostart = "2"
+# the webview will not always hand a terminal the clipboard; this one always does
+tauri-plugin-clipboard-manager = "2"
+
+# real PTYs for Workspace terminals: interactive agents need a TTY, not a pipe
+portable-pty = "0.9"
+# the status bar's memory reading; only processes are needed
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# a pasted clipboard image becomes a PNG file; already in the tree via tauri
+png = "0.18"
+
+# Deploy over SFTP. `ring` rather than the default aws-lc, which needs cmake
+# and NASM to build on Windows.
+russh = { version = "0.63", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "3"
+# server passwords live in the OS keychain, never in assay.db
+keyring = "4"
+tokio = { version = "1", features = ["fs", "io-util", "net", "time", "rt", "sync"] }
+# already in the tree via tauri-plugin-fs
+sha2 = "0.10"
+walkdir = "2"
+glob = "0.3"
+
+# file paths copied in Explorer (CF_HDROP); already in the tree via arboard
+[target.'cfg(windows)'.dependencies]
+clipboard-win = "5"

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "title": "Assay",
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,2 @@
+# Migrations are checksummed by sqlx: their bytes must not depend on the checkout.
+*.sql text eol=lf

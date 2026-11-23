@@ -1,0 +1,78 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Assay",
+  "version": "0.1.0",
+  "identifier": "com.develoverli.assay",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Assay",
+        "width": 1320,
+        "height": 860,
+        "minWidth": 1000,
+        "minHeight": 640,
+        "theme": "Dark",
+        "decorations": false,
+        "transparent": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "uninstallerHeaderImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
+        "installMode": "currentUser",
+        "displayLanguageSelector": true,
+        "languages": [
+          "English",
+          "Spanish"
+        ],
+        "startMenuFolder": "Assay"
+      }
+    },
+    "licenseFile": "../LICENSE",
+    "publisher": "develoverli",
+    "shortDescription": "Build, check and ship your code in one place, with local or cloud AI",
+    "longDescription": "One desktop app for your own projects, end to end: real terminals and an editor, the linters, scanners and pentest tools you trust, and AI agents \u2014 local or in the cloud \u2014 that fix what they find. Every run is recorded, nothing leaves your machine unless you send it.",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "background": "installer/dmg-background.png",
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 250
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 250
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+dist-ssr/
+*.tsbuildinfo
+*.local
+
+# rust / tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+**/*.rs.bk
+
+# env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# runtime data
+*.db
+*.db-shm
+*.db-wal
+
+# generated artifacts (graphify, audit and test reports)
+/graphify-out/
+/reports/
+/coverage/
+
+# logs
+logs/
+*.log
+
+# local agent settings
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock
+
+# editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.sw?
+*.suo
+
+# os
+.DS_Store
+Thumbs.db
+desktop.ini
