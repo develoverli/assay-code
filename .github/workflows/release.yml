@@ -7,15 +7,21 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# tauri-action creates the draft release and uploads the installers to it
+permissions:
+  contents: write
+
 jobs:
   bundle:
     strategy:
       fail-fast: false
       matrix:
         include:
-          # one universal binary, so a single .dmg covers Apple silicon and Intel
+          # one universal binary, so a single .dmg covers Apple silicon and Intel.
+          # tsc + the bundle run out of memory on macOS, so it builds with a bare
+          # `vite build` (the typecheck already runs in CI), like `pnpm build:mac`.
           - platform: macos-latest
-            args: --target universal-apple-darwin
+            args: "--target universal-apple-darwin --config '{\"build\":{\"beforeBuildCommand\":\"pnpm exec vite build\"}}'"
           - platform: ubuntu-22.04
             args: ""
           - platform: windows-latest
@@ -54,6 +60,7 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_OPTIONS: ${{ matrix.platform == 'macos-latest' && '--max-old-space-size=4096' || '' }}
           # optional: sign and notarise the macOS build; without them macOS warns on first open
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
