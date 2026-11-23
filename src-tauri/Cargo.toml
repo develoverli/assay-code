@@ -37,7 +37,7 @@ tauri-plugin-clipboard-manager = "2"
 # real PTYs for Workspace terminals: interactive agents need a TTY, not a pipe
 portable-pty = "0.9"
 # the status bar's memory reading; only processes are needed
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # a pasted clipboard image becomes a PNG file; already in the tree via tauri
