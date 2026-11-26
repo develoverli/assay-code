@@ -22,6 +22,7 @@ import { storeOrder, type TabKey } from "@/lib/tab-order";
 import { uid } from "@/lib/utils";
 import { tr } from "@/lib/i18n";
 import { useApp } from "@/store/app";
+import { targetId, type PreviewTarget } from "@/features/bench/link-detect";
 
 /** A Claude session id (a UUID): letters, digits and dashes only, safe in any shell unquoted. */
 export function isSafeSessionId(id: string): boolean {
@@ -71,11 +72,22 @@ interface OpenFile {
   openedAt: number | null;
 }
 
-/** Terminals, open files and the conflict being resolved share one tab strip; this says which owns it. */
-export type Focus = "terminal" | "file" | "conflict";
+/**
+ * A link preview pinned from the terminal hover: an image or a page, kept as a
+ * tab for the session. Code is never pinned here — it opens in the editor.
+ */
+export interface PinnedPreview {
+  /** The image path or the URL; also its tab key (`p:<id>`). */
+  id: string;
+  projectId: string | null;
+  target: Exclude<PreviewTarget, { kind: "code" }>;
+}
+
+/** Terminals, open files, pinned previews and the conflict being resolved share one tab strip; this says which owns it. */
+export type Focus = "terminal" | "file" | "preview" | "conflict";
 
 /** Which panel the right dock is showing (`dock` is null when folded away). */
-export type DockPanel = "files" | "search" | "git" | "deploy" | "conflicts" | "sessions" | "findings";
+export type DockPanel = "files" | "search" | "git" | "deploy" | "ports" | "conflicts" | "sessions" | "findings";
 
 /** The conflicted file open in the work area — one at a time, it is a task, not a document. */
 export interface ConflictTab {
@@ -94,6 +106,7 @@ export type SearchMode = "names" | "content";
 interface TabMemory {
   activeTerminal: string | null;
   activeFile: string | null;
+  activePreview: string | null;
   focus: Focus;
 }
 
@@ -225,6 +238,14 @@ interface BenchState {
   editFile: (path: string, content: string) => void;
   saveFileAt: (path: string) => Promise<void>;
 
+  /** Link previews pinned as tabs, every project's; session only, never stored. */
+  previews: PinnedPreview[];
+  activePreview: string | null;
+  /** Pin a preview as a tab, or bring it to the front when it is already one. */
+  openPreview: (target: PinnedPreview["target"]) => void;
+  closePreview: (id: string) => void;
+  setActivePreview: (id: string) => void;
+
   toggleShowIgnored: () => void;
   setError: (e: string | null, detail?: string | null) => void;
 }
@@ -246,6 +267,10 @@ export function terminalsFor(terminals: TermSession[], projectId: string | null)
 
 export function filesFor(files: OpenFile[], projectId: string | null): OpenFile[] {
   return files.filter((f) => f.projectId === projectId);
+}
+
+export function previewsFor(previews: PinnedPreview[], projectId: string | null): PinnedPreview[] {
+  return previews.filter((p) => p.projectId === projectId);
 }
 
 /**
@@ -304,6 +329,14 @@ function forgetFile(memory: Record<string, TabMemory>, path: string): Record<str
   return out;
 }
 
+function forgetPreview(memory: Record<string, TabMemory>, id: string): Record<string, TabMemory> {
+  const out: Record<string, TabMemory> = {};
+  for (const [key, mem] of Object.entries(memory)) {
+    out[key] = mem.activePreview === id ? { ...mem, activePreview: null } : mem;
+  }
+  return out;
+}
+
 /**
  * The status map plus every folder above a changed file, so a collapsed folder
  * can say that something inside it moved without the tree having read it.
@@ -357,12 +390,21 @@ export const useBench = create<BenchState>((set, get) => ({
       const remembered = s.projectId
         ? {
             ...s.remembered,
-            [s.projectId]: { activeTerminal: s.activeTerminal, activeFile: s.activeFile, focus: s.focus },
+            [s.projectId]: {
+              activeTerminal: s.activeTerminal,
+              activeFile: s.activeFile,
+              activePreview: s.activePreview,
+              focus: s.focus,
+            },
           }
         : s.remembered;
       const mem = remembered[projectId];
       const terms = terminalsFor(s.terminals, projectId);
       const files = filesFor(s.files, projectId);
+      const pinned = previewsFor(s.previews, projectId);
+      const activePreview = pinned.some((p) => p.id === mem?.activePreview)
+        ? (mem?.activePreview ?? null)
+        : (pinned[pinned.length - 1]?.id ?? null);
       const activeTerminal = terms.some((t) => t.id === mem?.activeTerminal)
         ? (mem?.activeTerminal ?? null)
         : (terms[terms.length - 1]?.id ?? null);
@@ -373,6 +415,7 @@ export const useBench = create<BenchState>((set, get) => ({
       let focus: Focus = mem?.focus ?? "terminal";
       if (focus === "conflict" && s.conflict?.projectId !== projectId) focus = "terminal";
       if (focus === "file" && !activeFile) focus = "terminal";
+      else if (focus === "preview" && !activePreview) focus = "terminal";
       else if (focus === "terminal" && !activeTerminal && activeFile) focus = "file";
       return {
         projectId,
@@ -380,6 +423,7 @@ export const useBench = create<BenchState>((set, get) => ({
         remembered,
         activeTerminal,
         activeFile,
+        activePreview,
         focus,
         // another repo's working tree says nothing about this one
         gitStatus: {},
@@ -748,6 +792,34 @@ export const useBench = create<BenchState>((set, get) => ({
       set({ error: e instanceof Error ? e.message : String(e) });
     }
   },
+
+  previews: [],
+  activePreview: null,
+  openPreview: (target) =>
+    set((s) => {
+      const id = targetId(target);
+      const mine = previewsFor(s.previews, s.projectId);
+      if (mine.some((p) => p.id === id)) return { activePreview: id, focus: "preview" };
+      return {
+        previews: [...s.previews, { id, projectId: s.projectId, target }],
+        activePreview: id,
+        focus: "preview",
+      };
+    }),
+  closePreview: (id) =>
+    set((s) => {
+      const previews = s.previews.filter((p) => !(p.id === id && p.projectId === s.projectId));
+      const mine = previewsFor(previews, s.projectId);
+      const activePreview = s.activePreview === id ? (mine[mine.length - 1]?.id ?? null) : s.activePreview;
+      return {
+        previews,
+        activePreview,
+        remembered: forgetPreview(s.remembered, id),
+        // the last preview closed hands the work area back to the terminal
+        focus: s.focus === "preview" && !activePreview ? "terminal" : s.focus,
+      };
+    }),
+  setActivePreview: (id) => set({ activePreview: id, focus: "preview" }),
 
   toggleShowIgnored: () => set((s) => ({ showIgnored: !s.showIgnored })),
   toggleShowDotfiles: () => set((s) => ({ showDotfiles: !s.showDotfiles })),

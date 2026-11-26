@@ -1,10 +1,13 @@
 mod agent_signals;
 mod clipboard;
 mod deploy;
+mod ports;
 mod pty;
 mod sessions;
+mod tunnel;
 mod usage;
 
+use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 /// A migration's SQL with LF line endings, whatever the checkout wrote.
@@ -100,11 +103,19 @@ pub fn run() {
             sql: lf(include_str!("../migrations/013_deploy.sql")),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 14,
+            description: "ports added by hand to a project's Ports panel",
+            sql: lf(include_str!("../migrations/014_project_ports.sql")),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
         .manage(pty::PtyState::default())
         .manage(usage::UsageState::default())
+        .manage(ports::PortsState::default())
+        .manage(tunnel::TunnelState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_spawn,
             pty::pty_write,
@@ -125,6 +136,10 @@ pub fn run() {
             deploy::deploy_secret_set,
             deploy::deploy_secret_delete,
             deploy::deploy_secret_has,
+            ports::ports_list,
+            tunnel::tunnel_start,
+            tunnel::tunnel_stop,
+            tunnel::tunnel_list,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
@@ -144,8 +159,14 @@ pub fn run() {
                 .add_migrations("sqlite:assay.db", migrations)
                 .build(),
         )
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // a public link must not outlive the app that opened it
+            if let tauri::RunEvent::Exit = event {
+                app.state::<tunnel::TunnelState>().kill_all();
+            }
+        });
 }
 
 #[cfg(test)]

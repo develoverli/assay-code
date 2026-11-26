@@ -1,8 +1,8 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import { GitMerge, Lock, Pencil, Plus, Save, X } from "lucide-react";
+import { GitMerge, Globe, Image as ImageIcon, Lock, Pencil, Plus, Save, X } from "lucide-react";
 import * as React from "react";
 import { availableLaunchers, droppedPathText, LAUNCHERS, resolveShell, type TermKind } from "@/lib/bench-term";
-import { filesFor, terminalsFor, useBench, type Focus } from "@/store/bench";
+import { filesFor, previewsFor, terminalsFor, useBench, type Focus } from "@/store/bench";
 import { ConfirmDialog, Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/primitives";
 import { useT } from "@/lib/i18n";
@@ -11,12 +11,13 @@ import { ConflictView } from "./ConflictView";
 import { ScriptsBar } from "./ScriptsBar";
 import { EditorPane } from "./EditorPane";
 import { TerminalPane } from "./TerminalPane";
+import { PreviewPane } from "./PreviewPane";
 import { relPath } from "@/lib/git";
 import { useFileDrop } from "@/lib/file-drop";
 import { isDirectory } from "@/lib/fs-tree";
 import { ptyWrite } from "@/lib/pty";
 import { fileGlyph, launcherGlyph, statusGlyph } from "./icons";
-import { fileKey, moveTab, nudgeTab, orderTabs, terminalKey, type TabKey } from "@/lib/tab-order";
+import { fileKey, moveTab, nudgeTab, orderTabs, previewKey, terminalKey, type TabKey } from "@/lib/tab-order";
 
 /**
  * One tab strip (terminals and open files together) over one surface. Both
@@ -291,6 +292,11 @@ export function WorkArea({ cwd }: { cwd: string }) {
   const allFiles = useBench((s) => s.files);
   const terminals = React.useMemo(() => terminalsFor(allTerminals, projectId), [allTerminals, projectId]);
   const files = React.useMemo(() => filesFor(allFiles, projectId), [allFiles, projectId]);
+  const allPreviews = useBench((s) => s.previews);
+  const previews = React.useMemo(() => previewsFor(allPreviews, projectId), [allPreviews, projectId]);
+  const activePreview = useBench((s) => s.activePreview);
+  const setActivePreview = useBench((s) => s.setActivePreview);
+  const closePreview = useBench((s) => s.closePreview);
   const activeTerminal = useBench((s) => s.activeTerminal);
   const setActiveTerminal = useBench((s) => s.setActiveTerminal);
   const closeTerminal = useBench((s) => s.closeTerminal);
@@ -314,8 +320,16 @@ export function WorkArea({ cwd }: { cwd: string }) {
 
   // the strip in the user's order; a tab never moved sits at the end
   const orderedKeys = React.useMemo(
-    () => orderTabs([...terminals.map((x) => terminalKey(x.id)), ...files.map((f) => fileKey(f.path))], tabOrder),
-    [terminals, files, tabOrder],
+    () =>
+      orderTabs(
+        [
+          ...terminals.map((x) => terminalKey(x.id)),
+          ...files.map((f) => fileKey(f.path)),
+          ...previews.map((p) => previewKey(p.id)),
+        ],
+        tabOrder,
+      ),
+    [terminals, files, previews, tabOrder],
   );
   const dragProps = useTabDrag((from, to) => arrangeTabs(moveTab(orderedKeys, from, to)));
 
@@ -323,6 +337,8 @@ export function WorkArea({ cwd }: { cwd: string }) {
   const dirty = !!file && file.content !== file.saved;
   const showingConflict = focus === "conflict" && !!conflict;
   const showingFile = focus === "file" && !!file;
+  const preview = previews.find((p) => p.id === activePreview) ?? null;
+  const showingPreview = focus === "preview" && !!preview;
 
   // a desktop drop types the paths into the terminal, or opens them in the editor
   const dropOnTerminal = async (paths: string[]): Promise<void> => {
@@ -375,13 +391,21 @@ export function WorkArea({ cwd }: { cwd: string }) {
     shortcuts.current = {
       closeActive: () => {
         if (showingFile && file) requestCloseFile(file.path);
+        else if (showingPreview && preview) closePreview(preview.id);
         else if (activeTerminal) requestCloseTerminal(activeTerminal);
       },
       focusTerminal: () => {
         if (activeTerminal) setActiveTerminal(activeTerminal);
       },
       nudge: (step) => {
-        const key = showingFile && file ? fileKey(file.path) : activeTerminal ? terminalKey(activeTerminal) : null;
+        const key =
+          showingFile && file
+            ? fileKey(file.path)
+            : showingPreview && preview
+              ? previewKey(preview.id)
+              : activeTerminal
+                ? terminalKey(activeTerminal)
+                : null;
         if (key) arrangeTabs(nudgeTab(orderedKeys, key, step));
       },
     };
@@ -426,7 +450,7 @@ export function WorkArea({ cwd }: { cwd: string }) {
               const term = terminals.find((x) => terminalKey(x.id) === key);
               if (!term) return null;
               const { Icon, tone } = launcherGlyph(term.kind);
-              const active = !showingFile && !showingConflict && term.id === activeTerminal;
+              const active = !showingFile && !showingConflict && !showingPreview && term.id === activeTerminal;
               return (
                 <TabShell
                   key={key}
@@ -466,6 +490,28 @@ export function WorkArea({ cwd }: { cwd: string }) {
                       aria-label={t("Claude finished while you were away")}
                     />
                   )}
+                </TabShell>
+              );
+            }
+            if (key.startsWith("p:")) {
+              const p = previews.find((x) => previewKey(x.id) === key);
+              if (!p) return null;
+              const active = showingPreview && p.id === activePreview;
+              const label = p.target.kind === "url" ? p.target.url.replace(/^https?:\/\//, "") : p.target.name;
+              const PreviewIcon = p.target.kind === "url" ? Globe : ImageIcon;
+              return (
+                <TabShell
+                  key={key}
+                  drag={dragProps(key)}
+                  active={active}
+                  title={p.id}
+                  onSelect={() => setActivePreview(p.id)}
+                  onClose={() => closePreview(p.id)}
+                  closeLabel={t("Close {name}", { name: label })}
+                  closeTitle={t("Close")}
+                >
+                  <PreviewIcon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-accent" : "text-low")} />
+                  <span className="max-w-[160px] truncate">{label}</span>
                 </TabShell>
               );
             }
@@ -562,7 +608,7 @@ export function WorkArea({ cwd }: { cwd: string }) {
           data-drop-zone="terminal"
           className={cn(
             "absolute inset-0",
-            (showingFile || showingConflict) && "invisible",
+            (showingFile || showingConflict || showingPreview) && "invisible",
             dropZone === "terminal" && "ring-2 ring-inset ring-accent",
           )}
         >
@@ -577,6 +623,10 @@ export function WorkArea({ cwd }: { cwd: string }) {
           )}
         >
           <EditorPane />
+        </div>
+        {/* pinned previews stay mounted too: switching tabs must not reload a page */}
+        <div className={cn("absolute inset-0", !showingPreview && "invisible")}>
+          <PreviewPane previews={previews} active={showingPreview ? activePreview : null} />
         </div>
         {/* kept mounted while another tab is in front: the choices made so far live in it */}
         {conflict && (

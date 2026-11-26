@@ -8,6 +8,7 @@ import { useT } from "@/lib/i18n";
 import { pasteIntoTerminal, writeClipboard } from "@/lib/clipboard";
 import { droppedPathText, resolveShell } from "@/lib/bench-term";
 import { registerTerminalLinks } from "./terminal-links";
+import { LinkPreviewPopover } from "./LinkPreview";
 
 /**
  * The terminals, over real PTYs. Each session owns a detached DOM node moved in
@@ -83,8 +84,8 @@ async function attach(id: string): Promise<Attached> {
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(host);
-  // ctrl+click on a path or a URL the agent printed
-  registerTerminalLinks(term, host, useBench.getState().terminals.find((x) => x.id === id)?.cwd ?? "");
+  // ctrl+click on a path or a URL the agent printed, and a preview when the pointer rests on one
+  registerTerminalLinks(term, useBench.getState().terminals.find((x) => x.id === id)?.cwd ?? "", id);
 
   // Ctrl+C copies only with a selection, otherwise it is the interrupt. Ctrl+V
   // goes through `term.paste`, which brackets the text so an agent takes a
@@ -204,6 +205,7 @@ export function TerminalPane() {
   return (
     <div className="relative h-full min-h-0 overflow-hidden p-1.5">
       <div ref={containerRef} className="h-full w-full" />
+      <LinkPreviewPopover />
       {!activeTerminal && (
         <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[12px] text-text-3">
           {t("No terminal open — use + to start one in this project.")}

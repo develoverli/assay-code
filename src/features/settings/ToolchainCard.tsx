@@ -105,7 +105,8 @@ function CustomPathDialog({
   );
 }
 
-function ToolchainRow({
+/** One tool: found or missing, and the way to install it. Workspace › Ports reuses it for cloudflared. */
+export function ToolchainRow({
   entry,
   status,
   running,

@@ -9,7 +9,7 @@ import { probe } from "@/lib/exec";
  * Windows PATH, and some installers never write there (opencode adds its bin to
  * `~/.profile`, read only by Git Bash). Order: user-set path, PATH, known homes.
  */
-export type BinId = "claude" | "opencode" | "hermes" | "ollama" | "lms";
+export type BinId = "claude" | "opencode" | "hermes" | "ollama" | "lms" | "cloudflared";
 
 export interface BinDirs {
   home: string;
@@ -51,6 +51,14 @@ export function knownBinPaths(id: BinId, windows: boolean, d: BinDirs): string[]
         return [`${local}/Programs/Ollama/ollama.exe`];
       case "lms":
         return [`${home}/.lmstudio/bin/lms.exe`, `${home}/.cache/lm-studio/bin/lms.exe`];
+      case "cloudflared":
+        // winget's MSI writes the machine PATH, which a running Assay never sees
+        return [
+          "C:/Program Files (x86)/cloudflared/cloudflared.exe",
+          "C:/Program Files/cloudflared/cloudflared.exe",
+          `${local}/Microsoft/WinGet/Links/cloudflared.exe`,
+          `${home}/scoop/shims/cloudflared.exe`,
+        ];
     }
   }
   const common = [`${home}/.local/bin`, "/opt/homebrew/bin", "/usr/local/bin", `${home}/.npm-global/bin`];
@@ -65,6 +73,8 @@ export function knownBinPaths(id: BinId, windows: boolean, d: BinDirs): string[]
       return [...common, "/usr/bin"].map((dir) => `${dir}/ollama`);
     case "lms":
       return [`${home}/.lmstudio/bin`, `${home}/.cache/lm-studio/bin`, ...common].map((dir) => `${dir}/lms`);
+    case "cloudflared":
+      return [...common, "/usr/bin"].map((dir) => `${dir}/cloudflared`);
   }
 }
 

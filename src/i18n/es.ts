@@ -978,7 +978,20 @@ export const ES: Record<string, string> = {
   "You:": "Vos:",
   "{n} msgs": "{n} mens.",
   "Resume this session in a terminal": "Retomar esta sesión en una terminal",
-  "Ctrl+click to open {target}": "Ctrl+clic para abrir {target}",
+  "Link preview": "Vista previa del enlace",
+  "Ctrl+click the link to open it · Esc closes": "Ctrl+clic en el enlace para abrirlo · Esc cierra",
+  "Reading the file…": "Leyendo el archivo…",
+  "Reading the image…": "Leyendo la imagen…",
+  "Secrets file, not previewed on hover. Ctrl+click opens it read-only.":
+    "Archivo de secretos: no se muestra al pasar el mouse. Ctrl+clic lo abre en solo lectura.",
+  "A blank page usually means the site refuses to be embedded. Open it in the browser.":
+    "Si la página queda en blanco, el sitio no permite que lo embeban. Abrilo en el navegador.",
+  "Copy URL": "Copiar URL",
+  "Reveal in folder": "Mostrar en la carpeta",
+  "Pin as a tab": "Fijar como pestaña",
+  "Open in browser": "Abrir en el navegador",
+  "Open as a tab": "Abrir como pestaña",
+  "Open in editor": "Abrir en el editor",
   "No Claude sessions recorded for this folder yet. Start one from the + menu and it shows up here.":
     "Todavía no hay sesiones de Claude para esta carpeta. Arrancá una desde el menú + y aparece acá.",
   "Switch branch": "Cambiar de rama",
@@ -1393,4 +1406,57 @@ export const ES: Record<string, string> = {
   "SonarQube refused to change its default admin password ({why}), so Assay stopped rather than keep admin/admin. Sign in at {host} as admin/admin, set a new password and enter it in Settings › SonarQube — or remove the container there and try again.": "SonarQube rechazó cambiar su contraseña de admin por defecto ({why}), así que Assay se detuvo en vez de seguir con admin/admin. Entrá en {host} como admin/admin, poné una contraseña nueva y cargala en Ajustes › SonarQube — o eliminá el contenedor ahí y probá de nuevo.",
   "No SHA-256 checksum for {asset} could be read from its release, so the download was deleted unverified.": "No se pudo leer un checksum SHA-256 para {asset} en su release, así que la descarga se borró sin verificar.",
   "The download of {asset} does not match the SHA-256 its release publishes, so it was deleted. Try again later.": "La descarga de {asset} no coincide con el SHA-256 que publica su release, así que se borró. Probá de nuevo más tarde.",
+
+  /* ---------------------------------- ports --------------------------------- */
+  Ports: "Puertos",
+  Share: "Compartir",
+  "Open Ports": "Abrir Puertos",
+  "1 public link": "1 link público",
+  "{n} public links": "{n} links públicos",
+  "{label} (1 public link)": "{label} (1 link público)",
+  "{label} ({n} public links)": "{label} ({n} links públicos)",
+  "Public links held by other projects": "Links públicos de otros proyectos",
+  "1 link in another project": "1 link en otro proyecto",
+  "{n} links in other projects": "{n} links en otros proyectos",
+  "Stop the link to :{port}": "Cerrar el link a :{port}",
+  listening: "escuchando",
+  "not listening": "no escucha",
+  "A terminal of this project printed this address": "Una terminal de este proyecto imprimió esta dirección",
+  "Process {pid}": "Proceso {pid}",
+  "added by hand": "agregado a mano",
+  "Nothing is listening on this port": "Nada escucha en este puerto",
+  "Remove port {port}": "Quitar el puerto {port}",
+  "Opening the link…": "Abriendo el link…",
+  "The link could not be opened.": "No se pudo abrir el link.",
+  "Link copied": "Link copiado",
+  "Link for port {port} copied": "Link del puerto {port} copiado",
+  "Add port": "Agregar puerto",
+  "Something running outside Assay? Add its port.": "¿Algo corriendo fuera de Assay? Agregá su puerto.",
+  "A port is a number from 1 to 65535.": "Un puerto es un número del 1 al 65535.",
+  "Links are opened with cloudflared, a free Cloudflare tool that needs no account. It is not on this machine yet.":
+    "Los links se abren con cloudflared, una herramienta gratuita de Cloudflare que no pide cuenta. Todavía no está en esta máquina.",
+  "Looking for ports…": "Buscando puertos…",
+  "Nothing running in this project": "Nada corriendo en este proyecto",
+  "Start something from the project — a dev server, an API — in a Workspace terminal, and its port shows up here to share with a link.":
+    "Levantá algo del proyecto — un dev server, una API — en una terminal de Workspace y su puerto aparece acá para compartirlo con un link.",
+  "Share port {port}?": "¿Compartir el puerto {port}?",
+  "{what} on this machine gets a public link at trycloudflare.com.":
+    "{what} en esta máquina recibe un link público en trycloudflare.com.",
+  "Anyone with the link can open it — there is no password. Do not share an admin panel or real data this way.":
+    "Cualquiera con el link puede abrirlo — no hay contraseña. No compartas así un panel de admin ni datos reales.",
+  "The link is copied when it is ready. It closes with Stop, when the port stops listening, or when you quit Assay.":
+    "El link se copia cuando está listo. Se cierra con Detener, cuando el puerto deja de escuchar o al salir de Assay.",
+  "cloudflared stopped before giving a link.": "cloudflared se detuvo antes de dar un link.",
+  "cloudflared is not installed.": "cloudflared no está instalado.",
+  "public links to a local port (Workspace › Ports) · no account":
+    "links públicos a un puerto local (Workspace › Puertos) · sin cuenta",
+  "public link": "link público",
+  "1 public link is open. Minimizing keeps it; quitting closes it.":
+    "Hay 1 link público abierto. Minimizar lo mantiene; salir lo cierra.",
+  "{n} public links are open. Minimizing keeps them; quitting closes them.":
+    "Hay {n} links públicos abiertos. Minimizar los mantiene; salir los cierra.",
+  "1 public link is open. Quitting closes it; whoever has it gets an error.":
+    "Hay 1 link público abierto. Salir lo cierra; quien lo tenga verá un error.",
+  "{n} public links are open. Quitting closes them; whoever has them gets an error.":
+    "Hay {n} links públicos abiertos. Salir los cierra; quien los tenga verá un error.",
 };

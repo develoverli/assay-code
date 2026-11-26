@@ -941,6 +941,27 @@ export async function deleteProjectCommand(id: string): Promise<void> {
   await db.execute("DELETE FROM project_commands WHERE id=$1", [id]);
 }
 
+/* ---------------------------------- ports ----------------------------------- */
+/** Ports added by hand to a project's Ports panel, lowest first. Detected ones are never stored. */
+export async function listProjectPorts(projectId: string): Promise<number[]> {
+  const db = await getDb();
+  const rows = await db.select<Row[]>("SELECT port FROM project_ports WHERE project_id=$1 ORDER BY port", [projectId]);
+  return rows.map((r) => Number(r.port));
+}
+
+export async function addProjectPort(projectId: string, port: number): Promise<void> {
+  const db = await getDb();
+  await db.execute(
+    "INSERT INTO project_ports (project_id,port,created_at) VALUES ($1,$2,$3) ON CONFLICT(project_id, port) DO NOTHING",
+    [projectId, port, now()],
+  );
+}
+
+export async function deleteProjectPort(projectId: string, port: number): Promise<void> {
+  const db = await getDb();
+  await db.execute("DELETE FROM project_ports WHERE project_id=$1 AND port=$2", [projectId, port]);
+}
+
 /* ---------------------------------- deploy ---------------------------------- */
 function mapServer(r: Row): DeployServer {
   return {

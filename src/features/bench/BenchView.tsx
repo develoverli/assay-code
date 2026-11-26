@@ -1,5 +1,6 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { DeployChip } from "@/features/deploy/DeployChip";
+import { PortsChip, TunnelsElsewhere } from "@/features/ports/PortsChip";
 import { AlertTriangle, FolderGit2, FolderOpen, GitBranch, Globe, Plus, SquareTerminal, Trash2, X } from "lucide-react";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import * as React from "react";
@@ -311,6 +312,7 @@ function BenchFooter({ path, projectId, project }: { path: string; projectId: st
       <RepoLink root={path} />
       <FolderLink path={path} />
       <DeployChip project={project} />
+      <PortsChip projectId={projectId} />
       {shell && (
         <span className="flex shrink-0 items-center gap-1" title={shell.program}>
           <SquareTerminal className="h-3 w-3" />
@@ -321,6 +323,7 @@ function BenchFooter({ path, projectId, project }: { path: string; projectId: st
         {live === 1 ? t("1 terminal") : t("{n} terminals", { n: live })}
       </span>
       {elsewhere.length > 0 && <HiddenTerminals sessions={elsewhere} />}
+      <TunnelsElsewhere projectId={projectId} />
       {memory && <MemoryReading usage={memory} />}
     </footer>
   );

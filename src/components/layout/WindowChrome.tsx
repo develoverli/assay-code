@@ -2,6 +2,7 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import * as React from "react";
 import { useApp, runningRuns, useRunMetas, useRunningCount } from "@/store/app";
 import { dirtyFiles, liveTerminals, useBench } from "@/store/bench";
+import { activeTunnels, usePorts } from "@/store/ports";
 import { ensureTray } from "@/lib/tray";
 import { appWindow, nativeFrame } from "@/lib/window-frame";
 import { ConfirmDialog, Dialog, DialogContent } from "@/components/ui/dialog";
@@ -90,6 +91,7 @@ function AtRiskList() {
   const runs = useRunMetas();
   const terminals = useBench((s) => s.terminals);
   const files = useBench((s) => s.files);
+  const tunnels = usePorts((s) => s.tunnels);
   return (
     <ul className="mt-3 space-y-1">
       {runs.filter((r) => r.status === "running").map((r) => (
@@ -100,6 +102,11 @@ function AtRiskList() {
       {liveTerminals(terminals).map((term) => (
         <li key={term.id} className="truncate font-mono text-[11px] text-text-3">
           {t("terminal")} · {term.title}
+        </li>
+      ))}
+      {activeTunnels(tunnels).map((tun) => (
+        <li key={tun.id} className="truncate font-mono text-[11px] text-text-3">
+          {t("public link")} · :{tun.port}
         </li>
       ))}
       {dirtyFiles(files).map((f) => (
@@ -131,7 +138,10 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
   // editors from every project: a tab hidden behind a project switch is exactly
   // the one whose unsaved work would go quietly
   const unsavedCount = useBench((s) => dirtyFiles(s.files).length);
-  const atRisk = busy + unsavedCount;
+  // public links live in Rust and survive a reload, so they do not block one;
+  // quitting closes them, so that door asks
+  const linkCount = usePorts((s) => activeTunnels(s.tunnels).length);
+  const atRisk = busy + unsavedCount + linkCount;
 
   const [closing, setClosing] = React.useState(false);
   const [quitting, setQuitting] = React.useState(false);
@@ -254,6 +264,7 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
       await Promise.allSettled([
         ...runningRuns(useApp.getState().runs).map((r) => cancel(r.runId)),
         ...liveTerminals(useBench.getState().terminals).map((term) => closeTerminal(term.id)),
+        ...activeTunnels(usePorts.getState().tunnels).map((tun) => usePorts.getState().stop(tun.id)),
       ]);
       await appWindow.destroy();
     })().catch(fail("Quit failed"));
@@ -297,6 +308,13 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
                   })}
             </p>
           )}
+          {linkCount > 0 && (
+            <p className="mt-2 text-[13px] leading-relaxed text-warn">
+              {linkCount === 1
+                ? t("1 public link is open. Minimizing keeps it; quitting closes it.")
+                : t("{n} public links are open. Minimizing keeps them; quitting closes them.", { n: linkCount })}
+            </p>
+          )}
           {unsavedCount > 0 && (
             <p className="mt-2 text-[13px] leading-relaxed text-warn">
               {unsavedCount === 1
@@ -338,8 +356,17 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
                     )}
               </p>
             )}
-            {unsavedCount > 0 && (
+            {linkCount > 0 && (
               <p className={busy > 0 ? "mt-2" : undefined}>
+                {linkCount === 1
+                  ? t("1 public link is open. Quitting closes it; whoever has it gets an error.")
+                  : t("{n} public links are open. Quitting closes them; whoever has them gets an error.", {
+                      n: linkCount,
+                    })}
+              </p>
+            )}
+            {unsavedCount > 0 && (
+              <p className={busy + linkCount > 0 ? "mt-2" : undefined}>
                 {unsavedCount === 1
                   ? t("1 open file has changes that are not on disk. Quitting loses them.")
                   : t("{n} open files have changes that are not on disk. Quitting loses them.", {
@@ -350,7 +377,7 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
             <AtRiskList />
           </>
         }
-        confirmLabel={busy > 0 ? t("Kill everything & quit") : t("Discard & quit")}
+        confirmLabel={busy + linkCount > 0 ? t("Kill everything & quit") : t("Discard & quit")}
         danger
         onConfirm={cancelAllAndQuit}
       />

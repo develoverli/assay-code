@@ -1,123 +1,162 @@
-import type { IBufferLine, ILink, Terminal } from "@xterm/xterm";
+import type { IBufferLine, IBufferRange, ILink, ILinkHandler, Terminal } from "@xterm/xterm";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { exists } from "@tauri-apps/plugin-fs";
+import { homeDir } from "@tauri-apps/api/path";
 import { useBench } from "@/store/bench";
-import { tr } from "@/lib/i18n";
+import {
+  fileCandidates,
+  fileTarget,
+  fileUrlToPath,
+  findAll,
+  resolvePath,
+  spaceSplits,
+  splitLocation,
+  URL_RE,
+  urlTarget,
+  type Hit,
+  type PreviewTarget,
+} from "./link-detect";
+import { hoverLink, leaveLink } from "./link-preview-state";
 
 /**
- * Ctrl/Cmd+click on what an agent prints: `path:line` opens in the editor, a URL
- * in the browser. A plain click must keep selecting text.
+ * What an agent prints, made usable: Ctrl/Cmd+click on a `path:line` opens it in
+ * the editor, on an image in a preview tab, on a URL in the browser; resting the
+ * pointer on any of them shows a preview. A plain click keeps selecting text.
+ *
+ * Two kinds of link reach here. The ones found by matching the text, below, and
+ * the OSC 8 hyperlinks a program writes explicitly (Claude Code does, for paths
+ * and URLs) — those xterm handles itself through `linkHandler`, whose default
+ * asks `confirm()` and calls `window.open`, neither of which does anything in
+ * the webview, and which drops every `file://` link. So both are wired here.
  */
 
-/** `src/lib/db.ts:485:12`, `./x.py:3`, `D:\work\app\main.rs` — with the line if it's there. */
-// Bounded pieces with no nested quantifiers, so a path-like line cannot
-// backtrack exponentially. `(?::\d)?\d*` is `(?::\d+)?` without the nesting.
-const FILE_RE =
-  /(?:[A-Za-z]:[\\/]|\.{1,2}[\\/]|[~\w.-]{1,64}[\\/])[\w .\-\\/]{0,256}\.[\w-]{1,16}(?::\d)?\d*(?::\d)?\d*/g;
+/** A path seen recently: agents create files, so a miss is asked again soon. */
+const EXISTS_TTL = 5_000;
+const existsCache = new Map<string, { ok: boolean; at: number }>();
 
-const URL_RE = /https?:\/\/[^\s"'`<>)\]}]+/g;
-
-interface Hit {
-  text: string;
-  /** 0-based index into the line. */
-  start: number;
+async function isFile(path: string): Promise<boolean> {
+  const hit = existsCache.get(path);
+  if (hit && (hit.ok || Date.now() - hit.at < EXISTS_TTL)) return hit.ok;
+  const ok = await exists(path).catch(() => false);
+  existsCache.set(path, { ok, at: Date.now() });
+  return ok;
 }
 
-function findAll(line: string, re: RegExp): Hit[] {
-  const out: Hit[] = [];
-  re.lastIndex = 0;
-  for (const m of line.matchAll(re)) {
-    if (m.index === undefined) continue;
-    out.push({ text: m[0], start: m.index });
+let home: Promise<string> | null = null;
+const homePath = (): Promise<string> => (home ??= homeDir().catch(() => ""));
+
+/** Open what a link points at: code in the editor, an image in a preview tab, a page in the browser. */
+export async function activateTarget(target: PreviewTarget): Promise<void> {
+  if (target.kind === "url") {
+    await openUrl(target.url);
+    return;
   }
-  return out;
-}
-
-const DIGITS = /^\d+$/;
-
-/**
- * Split `path:line:col` without eating a Windows drive letter. Scanned from the
- * right rather than with `/^(.*?):(\d+)/`, which backtracks quadratically.
- */
-function splitLocation(raw: string): { path: string; line: number } {
-  const parts = raw.split(":");
-  // a trailing `:col` only counts when a line number sits in front of it
-  if (parts.length > 2 && DIGITS.test(parts[parts.length - 1]) && DIGITS.test(parts[parts.length - 2])) {
-    parts.pop();
+  if (target.kind === "image") {
+    useBench.getState().openPreview(target);
+    return;
   }
-  const last = parts.pop();
-  if (last === undefined || !DIGITS.test(last)) return { path: raw, line: 0 };
-  return { path: parts.join(":"), line: Number(last) || 0 };
+  await useBench.getState().openAt(target.path, target.name, target.line || 1);
 }
 
-function isAbsolute(path: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/");
+const modifier = (e: MouseEvent): boolean => e.ctrlKey || e.metaKey;
+
+function makeLink(
+  range: IBufferRange,
+  text: string,
+  target: PreviewTarget,
+  sessionId: string,
+): ILink {
+  return {
+    range,
+    text,
+    activate: (event) => {
+      // plain clicks belong to text selection
+      if (!modifier(event)) return;
+      void activateTarget(target).catch(() => {});
+    },
+    hover: (event) => hoverLink(target, { x: event.clientX, y: event.clientY }, sessionId),
+    leave: () => leaveLink(),
+  };
 }
 
-function resolve(cwd: string, path: string): string {
-  const clean = path.replace(/\\/g, "/").replace(/^\.\//, "");
-  if (isAbsolute(path)) return clean;
-  // the trailing slashes come off in a loop: `/\/+$/` backtracks quadratically
-  let base = cwd.replace(/\\/g, "/");
-  while (base.endsWith("/")) base = base.slice(0, -1);
-  return `${base}/${clean}`;
+const rangeOf = (hit: Hit, y: number): IBufferRange => ({
+  start: { x: hit.start + 1, y },
+  end: { x: hit.start + hit.text.length, y },
+});
+
+/** The file a hit names, when it is one; a hit with spaces falls back to its pieces. */
+async function existingFiles(hit: Hit, cwd: string): Promise<{ hit: Hit; target: PreviewTarget }[]> {
+  const homeDirPath = await homePath();
+  const check = async (h: Hit): Promise<{ hit: Hit; target: PreviewTarget } | null> => {
+    const { path, line } = splitLocation(h.text);
+    const absolute = resolvePath(cwd, path, homeDirPath);
+    return (await isFile(absolute)) ? { hit: h, target: fileTarget(absolute, line) } : null;
+  };
+  const whole = await check(hit);
+  if (whole) return [whole];
+  const pieces = await Promise.all(spaceSplits(hit).map(check));
+  return pieces.filter((p): p is { hit: Hit; target: PreviewTarget } => p !== null);
 }
 
-async function openFile(cwd: string, raw: string): Promise<void> {
-  const { path, line } = splitLocation(raw);
-  const absolute = resolve(cwd, path);
-  // a word that merely looks like a path is not a link
-  if (!(await exists(absolute).catch(() => false))) return;
-  const name = absolute.split("/").pop() ?? absolute;
-  await useBench.getState().openAt(absolute, name, line || 1);
+/** What `linkHandler` does for OSC 8 links: the same gestures as the matched ones. */
+function oscHandler(sessionId: string): ILinkHandler {
+  const targetOf = (text: string): PreviewTarget | null => {
+    if (/^https?:\/\//i.test(text)) return urlTarget(text);
+    const file = fileUrlToPath(text);
+    return file ? fileTarget(file.path, file.line) : null;
+  };
+  return {
+    // `file://` is how a program links a path; anything else non-http is refused in `targetOf`
+    allowNonHttpProtocols: true,
+    activate: (event, text) => {
+      if (!modifier(event)) return;
+      const target = targetOf(text);
+      if (target) void activateTarget(target).catch(() => {});
+    },
+    hover: (event, text) => {
+      const target = targetOf(text);
+      if (target) hoverLink(target, { x: event.clientX, y: event.clientY }, sessionId);
+    },
+    leave: () => leaveLink(),
+  };
 }
 
 /**
  * Registers the providers on a terminal. `cwd` is what relative paths resolve
  * against — the folder the session was opened in.
  */
-export function registerTerminalLinks(term: Terminal, host: HTMLElement, cwd: string): void {
-  const provider = (
-    y: number,
-    callback: (links: ILink[] | undefined) => void,
-    kind: "file" | "url",
-  ): void => {
-    const buffer = term.buffer.active;
-    const bufferLine: IBufferLine | undefined = buffer.getLine(y - 1);
-    if (!bufferLine) return callback(undefined);
+export function registerTerminalLinks(term: Terminal, cwd: string, sessionId: string): void {
+  term.options.linkHandler = oscHandler(sessionId);
+
+  const lineText = (y: number): string | null => {
+    const bufferLine: IBufferLine | undefined = term.buffer.active.getLine(y - 1);
+    if (!bufferLine) return null;
     const text = bufferLine.translateToString(true);
-    if (!text.trim()) return callback(undefined);
-
-    const hits = findAll(text, kind === "url" ? URL_RE : FILE_RE);
-    if (!hits.length) return callback(undefined);
-
-    callback(
-      hits.map((hit) => ({
-        range: {
-          start: { x: hit.start + 1, y },
-          end: { x: hit.start + hit.text.length, y },
-        },
-        text: hit.text,
-        activate: (event: MouseEvent, uri: string) => {
-          // plain clicks belong to text selection
-          if (!event.ctrlKey && !event.metaKey) return;
-          if (kind === "url") void openUrl(uri).catch(() => {});
-          else void openFile(cwd, uri).catch(() => {});
-        },
-        hover: (_event: MouseEvent, uri: string) => {
-          host.title = tr("Ctrl+click to open {target}", { target: uri });
-        },
-        leave: () => {
-          host.title = "";
-        },
-      })),
-    );
+    return text.trim() ? text : null;
   };
 
   term.registerLinkProvider({
-    provideLinks: (y, cb) => provider(y, cb, "url"),
+    provideLinks: (y, callback) => {
+      const text = lineText(y);
+      if (!text) return callback(undefined);
+      const hits = findAll(text, URL_RE);
+      callback(hits.length ? hits.map((h) => makeLink(rangeOf(h, y), h.text, urlTarget(h.text), sessionId)) : undefined);
+    },
   });
+
   term.registerLinkProvider({
-    provideLinks: (y, cb) => provider(y, cb, "file"),
+    provideLinks: (y, callback) => {
+      const text = lineText(y);
+      if (!text) return callback(undefined);
+      const candidates = fileCandidates(text);
+      if (!candidates.length) return callback(undefined);
+      // a word that merely looks like a path is not a link: only real files underline
+      void Promise.all(candidates.map((c) => existingFiles(c, cwd)))
+        .then((found) => {
+          const links = found.flat().map(({ hit, target }) => makeLink(rangeOf(hit, y), hit.text, target, sessionId));
+          callback(links.length ? links : undefined);
+        })
+        .catch(() => callback(undefined));
+    },
   });
 }

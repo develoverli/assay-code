@@ -1,13 +1,15 @@
 /**
  * The order of the Workspace tab strip, as the user arranged it. Keys are
- * `t:<session id>` or `f:<absolute path>`, one list shared by every project; a tab
+ * `t:<session id>`, `f:<absolute path>` or `p:<preview id>` (a pinned link
+ * preview: an image path or a URL), one list shared by every project; a tab
  * never moved has no entry and goes at the end in opening order.
  */
 
-export type TabKey = `t:${string}` | `f:${string}`;
+export type TabKey = `t:${string}` | `f:${string}` | `p:${string}`;
 
 export const terminalKey = (id: string): TabKey => `t:${id}`;
 export const fileKey = (path: string): TabKey => `f:${path}`;
+export const previewKey = (id: string): TabKey => `p:${id}`;
 
 /** `keys` in the user's order; the ones never placed keep their own order, last. */
 export function orderTabs(keys: TabKey[], order: TabKey[]): TabKey[] {

@@ -7,7 +7,17 @@ import { probe, runTokens, type ProcHandle, type ProcResult } from "@/lib/exec";
  * a package manager the user already has; piped install scripts (Hermes) and admin
  * installers (Docker Desktop) get a link and a command to copy instead.
  */
-export type ToolchainId = "node" | "git" | "claude" | "opencode" | "hermes" | "ollama" | "lmstudio" | "docker" | "strix";
+export type ToolchainId =
+  | "node"
+  | "git"
+  | "claude"
+  | "opencode"
+  | "hermes"
+  | "ollama"
+  | "lmstudio"
+  | "docker"
+  | "strix"
+  | "cloudflared";
 
 export type OS = "windows" | "macos" | "linux";
 
@@ -38,6 +48,12 @@ export const TOOLCHAIN: ToolchainEntry[] = [
     hint: "required by strix and SonarQube (needs docker.exe on PATH, not only WSL)",
   },
   { id: "strix", label: "Strix", probeCmd: "strix --version", hint: "AI pentest agent — docker + LLM key" },
+  {
+    id: "cloudflared",
+    label: "cloudflared",
+    bin: "cloudflared",
+    hint: "public links to a local port (Workspace › Ports) · no account",
+  },
 ];
 
 export interface Managers {
@@ -63,6 +79,7 @@ const URLS: Record<ToolchainId, string> = {
   lmstudio: "https://lmstudio.ai/download",
   docker: "https://docs.docker.com/get-started/get-docker/",
   strix: "https://github.com/usestrix/strix",
+  cloudflared: "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
 };
 
 const WINGET_IDS: Partial<Record<ToolchainId, string>> = {
@@ -70,6 +87,7 @@ const WINGET_IDS: Partial<Record<ToolchainId, string>> = {
   git: "Git.Git",
   ollama: "Ollama.Ollama",
   lmstudio: "ElementLabs.LMStudio",
+  cloudflared: "Cloudflare.cloudflared",
 };
 
 const BREW: Partial<Record<ToolchainId, string[]>> = {
@@ -77,6 +95,7 @@ const BREW: Partial<Record<ToolchainId, string[]>> = {
   git: ["git"],
   ollama: ["ollama"],
   lmstudio: ["--cask", "lm-studio"],
+  cloudflared: ["cloudflared"],
 };
 
 const NPM_PACKAGES: Partial<Record<ToolchainId, string>> = {

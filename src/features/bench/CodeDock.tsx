@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   PanelRightClose,
   PanelRightOpen,
+  RadioTower,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -26,6 +27,8 @@ import { FindingsPanel } from "./FindingsPanel";
 import { GitPanel } from "./GitPanel";
 import { SessionsPanel } from "./SessionsPanel";
 import { DeployPanel, useDeployBadge } from "@/features/deploy/DeployPanel";
+import { PortsPanel } from "@/features/ports/PortsPanel";
+import { useTunnelCount } from "@/features/ports/PortsChip";
 import { useApp } from "@/store/app";
 
 /**
@@ -38,6 +41,7 @@ const PANELS: { id: DockPanel; label: string; icon: React.ComponentType<{ classN
   { id: "search", label: "Search", icon: Search },
   { id: "git", label: "Git", icon: GitBranch },
   { id: "deploy", label: "Deploy", icon: CloudUpload },
+  { id: "ports", label: "Ports", icon: RadioTower },
   { id: "conflicts", label: "Conflicts", icon: GitMerge },
   { id: "sessions", label: "Sessions", icon: MessageSquareCode },
   { id: "findings", label: "Findings", icon: ShieldAlert },
@@ -118,6 +122,13 @@ function FilesMenu({ root }: { root: string }) {
   );
 }
 
+/** A rail button's name, with what its badge counts said in words rather than a bare number. */
+function railLabel(t: ReturnType<typeof useT>, id: DockPanel, label: string, badge: number): string {
+  if (!badge) return label;
+  if (id === "ports") return badge === 1 ? t("{label} (1 public link)", { label }) : t("{label} ({n} public links)", { label, n: badge });
+  return t("{label} ({n})", { label, n: badge });
+}
+
 export function DockRail() {
   const t = useT();
   const dock = useBench((s) => s.dock);
@@ -127,6 +138,7 @@ export function DockRail() {
   const conflicts = useBench((s) => Object.values(s.gitStatus).filter((v) => v === "conflict").length);
   const projectId = useApp((s) => s.activeProjectId);
   const deploy = useDeployBadge(projectId ?? "");
+  const publicLinks = useTunnelCount(projectId ?? "");
 
   return (
     <nav
@@ -156,14 +168,16 @@ export function DockRail() {
         let badge = p.id === "conflicts" && conflicts > 0 ? conflicts : 0;
         // what the default server has not received yet, the way an editor counts unsaved files
         if (p.id === "deploy") badge = deploy.pending;
+        // links that make this machine reachable from the internet right now
+        if (p.id === "ports") badge = publicLinks;
         return (
           <button
             type="button"
             key={p.id}
             onClick={() => openDock(p.id)}
             aria-pressed={active}
-            title={badge ? t("{label} ({n})", { label: t(p.label), n: badge }) : t(p.label)}
-            aria-label={badge ? t("{label} ({n})", { label: t(p.label), n: badge }) : t(p.label)}
+            title={railLabel(t, p.id, t(p.label), badge)}
+            aria-label={railLabel(t, p.id, t(p.label), badge)}
             className={cn(
               "relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-md transition-colors",
               "focus-visible:outline-2 focus-visible:outline-accent",
@@ -221,6 +235,7 @@ export function DockPanelBody({
   if (dock === "findings") heading = t("Findings");
   else if (dock === "git") heading = t("Git");
   else if (dock === "deploy") heading = t("Deploy");
+  else if (dock === "ports") heading = t("Ports");
   else if (dock === "conflicts") heading = t("Conflicts");
   else if (dock === "sessions") heading = t("Sessions");
   const filesPanel = dock === "files" || dock === "search";
@@ -250,6 +265,7 @@ export function DockPanelBody({
       {dock === "findings" && <FindingsPanel root={root} projectId={projectId} />}
       {dock === "git" && <GitPanel root={root} />}
       {dock === "deploy" && project && <DeployPanel project={project} />}
+      {dock === "ports" && <PortsPanel projectId={projectId} />}
       {dock === "conflicts" && <ConflictsPanel root={root} />}
       {dock === "sessions" && <SessionsPanel root={root} />}
       {filesPanel && <FilesPanel key={treeSeq} root={root} />}

@@ -64,6 +64,27 @@
     "sql:allow-select",
     "fs:default",
     {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        { "path": "**/*.png" },
+        { "path": "**/*.PNG" },
+        { "path": "**/*.jpg" },
+        { "path": "**/*.JPG" },
+        { "path": "**/*.jpeg" },
+        { "path": "**/*.JPEG" },
+        { "path": "**/*.gif" },
+        { "path": "**/*.GIF" },
+        { "path": "**/*.webp" },
+        { "path": "**/*.WEBP" },
+        { "path": "**/*.svg" },
+        { "path": "**/*.SVG" },
+        { "path": "**/*.ico" },
+        { "path": "**/*.ICO" },
+        { "path": "**/*.bmp" },
+        { "path": "**/*.BMP" }
+      ]
+    },
+    {
       "identifier": "fs:allow-read-text-file",
       "allow": [
         {

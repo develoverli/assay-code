@@ -52,10 +52,38 @@ struct Session {
     kind: String,
     cwd: String,
     project_id: Option<String>,
+    /// The shell's own pid, so a port a process under it listens on can be
+    /// traced back to this terminal (and its project).
+    pid: Option<u32>,
 }
 
 #[derive(Default)]
 pub struct PtyState(Mutex<HashMap<String, Session>>);
+
+/// What `ports.rs` needs to know about one live terminal.
+pub struct ShellRoot {
+    pub pid: Option<u32>,
+    pub project_id: Option<String>,
+    pub scrollback: Arc<Mutex<String>>,
+}
+
+impl PtyState {
+    /// Every session's shell pid, project and scrollback, taken under the lock
+    /// and handed out so the slow part (reading sockets) runs without it.
+    pub fn shell_roots(&self) -> Vec<ShellRoot> {
+        let Ok(sessions) = self.0.lock() else {
+            return Vec::new();
+        };
+        sessions
+            .values()
+            .map(|s| ShellRoot {
+                pid: s.pid,
+                project_id: s.project_id.clone(),
+                scrollback: Arc::clone(&s.scrollback),
+            })
+            .collect()
+    }
+}
 
 fn keep_tail(buf: &mut String) {
     if buf.len() <= SCROLLBACK_LIMIT {
@@ -156,6 +184,7 @@ pub fn pty_spawn(
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
+    let pid = child.process_id();
 
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
@@ -203,6 +232,7 @@ pub fn pty_spawn(
             kind: kind.unwrap_or_else(|| "shell".to_string()),
             cwd: cwd.unwrap_or_default(),
             project_id,
+            pid,
         },
     );
     Ok(())

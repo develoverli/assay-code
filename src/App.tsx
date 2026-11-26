@@ -6,6 +6,7 @@ import { onAgentStatus, onAgentStop } from "@/lib/agent-signals";
 import { useClaudeUsage } from "@/store/claude-usage";
 import { useBench } from "@/store/bench";
 import { useUI } from "@/store/ui";
+import { usePorts } from "@/store/ports";
 import { AppShell } from "@/components/layout/AppShell";
 import { Spinner } from "@/components/ui/primitives";
 
@@ -25,6 +26,12 @@ export default function App() {
   useEffect(() => {
     void initLang();
   }, [initLang]);
+
+  // public links held in Rust survive a reload; pick them back up, and start the
+  // heartbeat that closes one whose server stopped listening
+  useEffect(() => {
+    usePorts.getState().init().catch(() => undefined);
+  }, []);
 
   // unattended scans, if the user turned them on
   useEffect(() => startScheduler(), []);
