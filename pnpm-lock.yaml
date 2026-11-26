@@ -39,8 +39,8 @@ importers:
         specifier: ^9.2.4
         version: 9.2.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tauri-apps/api':
-        specifier: ^2
-        version: 2.11.1
+        specifier: ^2.12.5
+        version: 2.12.5
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.3
         version: 2.7.3
@@ -1018,9 +1018,6 @@ packages:
   '@tanstack/table-core@9.2.4':
     resolution: {integrity: sha512-GwdDyGGr6UXAtubF14yAwcXvdaogqfsQgIk89Suebjxob/Rjq2xvfmXsjDF1rQmKmhHsJm9TOY7myxv3i6geJw==}
     engines: {node: '>=20'}
-
-  '@tauri-apps/api@2.11.1':
-    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
   '@tauri-apps/api@2.12.5':
     resolution: {integrity: sha512-G9QIMt5fzED+aS4QhVK3w1HWLKpLIwH/MnpCr9z1ugGEHnS2ORmqrLkc0uALOjRK4qXJy+4Yiw8LDl/KicC1Hg==}
@@ -2420,8 +2417,6 @@ snapshots:
     dependencies:
       '@tanstack/store': 0.11.1
 
-  '@tauri-apps/api@2.11.1': {}
-
   '@tauri-apps/api@2.12.5': {}
 
   '@tauri-apps/cli-darwin-arm64@2.11.4':
@@ -2473,27 +2468,27 @@ snapshots:
 
   '@tauri-apps/plugin-dialog@2.7.3':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-fs@2.5.2':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-http@2.6.0':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-notification@2.4.0':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-opener@2.5.5':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-os@2.3.2':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-process@2.4.0':
     dependencies:
@@ -2501,11 +2496,11 @@ snapshots:
 
   '@tauri-apps/plugin-shell@2.3.6':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-sql@2.4.1':
     dependencies:
-      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/api': 2.12.5
 
   '@tauri-apps/plugin-updater@2.14.1':
     dependencies:
