@@ -18,6 +18,8 @@ Open source under GPL-3.0-only (`LICENSE`); contributor guide in `CONTRIBUTING.m
 - **tauri-plugin-clipboard-manager** — the clipboard behind the terminals, Rust side only: its
   commands are invoked directly, so there is no npm wrapper in `package.json`
 - **russh** + **russh-sftp** (SFTP) and **keyring** (OS keychain) — Deploy, Rust side only
+- **tauri-plugin-updater** + **tauri-plugin-process** — self-update from GitHub Releases and the
+  relaunch after it
 - **vitest** — unit tests for the pure logic (adapters, tokenizer, config builder)
 - **pnpm** package manager. Never npm or yarn.
 - **No i18n library**: `lib/i18n.ts` plus one dictionary per language
@@ -40,7 +42,8 @@ src/
     RunWindow.tsx          floating log of the selected run
     ui/                    primitives, dialog, data-table, severity, terminal
   features/                one folder per view: projects, tools, findings, bench, audit,
-                           skills, commands, processes, stats, settings, shared
+                           skills, commands, processes, stats, settings, shared; plus ports
+                           (Workspace's Ports panel) and updates (the header's update chip)
   lib/
     exec.ts                spawn tools via tauri-plugin-shell, stream stdout/stderr
     runner.ts              run orchestration (start, stream, persist)
@@ -56,7 +59,8 @@ src/
     schedule.ts            unattended scans on an interval
     tool-options.ts        per-tool option schemas + generated ESLint flat config
     ai.ts, agent-stream.ts the AI per task, what can answer (inventory), one-shot runs, AI fix loop
-    agent-bins.ts          where claude / opencode / hermes / ollama / lms live, PATH or not
+    agent-bins.ts          where claude / opencode / hermes / ollama / lms / cloudflared live,
+                           PATH or not
     toolchain.ts           what Assay needs on the machine, and the recipe that installs each
     local-models.ts        local model discovery (Ollama & friends)
     pty.ts                 front half of the Rust PTY sessions
@@ -73,6 +77,8 @@ src/
     git.ts                 git: branch, working tree, commits, per-file status, and the writes a
                            button asks for
     deploy.ts              Deploy: sftp.json in and out, the change list, the calls into deploy.rs
+    ports.ts               Ports: which rows a project shows, when a quiet link closes, the calls
+    updater.ts             self-update: settings, intervals, install kind, release links
     sessions.ts            Claude Code transcripts on disk for a project
     code-search.ts         content search via ripgrep / git grep / grep, whichever exists
     monaco.ts              Monaco workers + the theme built from the design tokens
@@ -83,7 +89,9 @@ src/
   store/                   app.ts (projects, runs, findings), ui.ts (view, selection),
                            bench.ts (terminals, open files and git status, per project),
                            claude-usage.ts (plan limits and context per terminal),
-                           deploy.ts (servers, pending changes, uploads, folder watchers)
+                           deploy.ts (servers, pending changes, uploads, folder watchers),
+                           ports.ts (listening ports, hand-added ports, public links),
+                           updater.ts (the version found, download, install now or on quit)
   i18n/es.ts               Spanish dictionary (English is the key, so it needs none)
   styles/globals.css       design tokens (dark-first) + frame styling
 src-tauri/
@@ -94,6 +102,8 @@ src-tauri/
   src/clipboard.rs         clipboard images to a PNG on disk, and copied file paths
   src/sessions.rs          agent transcripts summarised without loading them into the UI
   src/deploy.rs            Deploy: disk scan and hashes, SFTP (russh), FTP/FTPS (curl), keychain
+  src/ports.rs             listening TCP ports (netstat / lsof / ss) and the project each belongs to
+  src/tunnel.rs            cloudflared quick tunnels that outlive the webview and die with the app
   capabilities/default.json permission scopes
   migrations/*.sql         schema
 docs/design/               PRODUCT.md + DESIGN.md (design system source of truth)
@@ -644,6 +654,49 @@ file moves to the keychain). **Save as .vscode/sftp.json** writes them back for 
 Deploy write into the project, and only on that click. Add project has a **Publishes to a server**
 switch that lands the new project on its Deploy panel with the server form open.
 
+## Ports
+
+What VS Code's port forwarding does, for a dev server an agent started in the terminal next door:
+the **Ports** panel in Workspace's dock lists what the project is serving, and each port is one click
+from a public `https://<random>.trycloudflare.com` link to send to someone.
+
+`src-tauri/src/ports.rs` asks the OS with the tool it already ships — `netstat -ano` on Windows,
+`lsof -iTCP -sTCP:LISTEN -F pn` on macOS, `ss -ltnp` then `lsof` on Linux — rather than a socket
+crate. On Windows the state column is translated (`ESCUCHANDO`), so a listening row is recognised by
+its peer address (`0.0.0.0:0`, `[::]:0`), never by the word. Only sockets reachable through loopback
+count (wildcard, `127.*`, `::1`); one bound to a LAN address alone is left out, since a tunnel on
+this machine could not reach it. A port **belongs to a project** when the listening process descends
+from one of that project's terminals — `pty.rs` keeps each shell's pid, and `sysinfo` walks parent
+links up to it — or, for servers outside the shell's tree such as a container, when one of those
+terminals printed `localhost:<port>` (the scrollback tail is searched with escape sequences taken
+out, because Vite prints its port in bold). The panel shows only the active project's ports and
+follows a project switch; nothing running gives an empty state that says how to get a row.
+
+Something running outside Assay is added by hand (**Add port**). Those ports are stored per project
+(`project_ports`, migration 014) and stay listed while nothing listens on them; detected ports are
+never stored. Storing a port never opens a link.
+
+A link is `cloudflared tunnel --url http://<host>:<port>`: an outbound connection, no account, no
+inbound port. It is held in Rust (`src-tauri/src/tunnel.rs`), so it survives a reload and a project
+switch the way a terminal does, and links held by other projects are listed in the footer with a
+way back and a Stop. The webview picks the binary (PATH, a known install folder, or the path set in
+Toolchain) but `tunnel_start` refuses anything not called `cloudflared` and any host that is not
+loopback. `--http-host-header localhost:<port>` is passed because dev servers refuse an unknown Host
+(Vite answers "Blocked request"); an app that builds absolute URLs from that header will build them
+with `localhost`. The URL is read from cloudflared's log, copied to the clipboard as soon as it
+appears, and the row offers Copy, Open and Stop.
+
+A quick tunnel has **no password**, so every Share confirms first and says so, and a live link
+carries a **Public** badge in `warn` on its row, a count on the rail, and a chip in the footer. A link
+closes on Stop, when its port is silent on two polls in a row (a dev server restarting on save does
+not cost the link everyone was sent), and when Assay exits — `RunEvent::Exit` kills every tunnel. If
+Assay crashes instead of exiting, cloudflared is not killed. Links count in the quit confirmation
+but do not block a reload, since they live in Rust. Ports are read on a 10 s heartbeat while the
+panel is on screen and the window has focus, and whenever a link is up.
+
+cloudflared is a Toolchain row (winget `Cloudflare.cloudflared`, brew, the download page on Linux),
+and the panel shows that same row, with its Install, when the binary is missing.
+
 ## Scripts
 
 The ▶ beside `+` in the tab strip (or **Ctrl+Shift+R**) opens a palette of the project's own
@@ -786,6 +839,35 @@ Versions follow SemVer and `CHANGELOG.md` follows Keep a Changelog. `pnpm versio
 the version into every file that carries it and turns `## [Unreleased]` into the new section; it
 commits and tags nothing. The maintainer commits, tags `vX.Y.Z` and pushes; the tag runs
 `.github/workflows/release.yml`, which builds every platform into a **draft** release.
+
+### Updates
+
+Installed copies update themselves from GitHub Releases through `tauri-plugin-updater`. They read
+`releases/latest/download/latest.json` — the newest **published** release, which never includes a
+draft or a pre-release — so publishing the draft on GitHub is the act that ships a version to
+everyone, and a broken build that stays a draft reaches nobody.
+
+Every installer is signed with minisign. The public key is `plugins.updater.pubkey` in
+`tauri.conf.json`; the private key and its password are the `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets, and the release build fails without them
+rather than publishing an unsigned release. `createUpdaterArtifacts` is switched on by `--config` in
+`release.yml` and not in `tauri.conf.json`, so a local `pnpm build:win` keeps working without the
+key. `tauri-action` uploads `latest.json` (`includeUpdaterJson`), pointing Windows at the NSIS
+installer rather than the MSI. Losing the private key means installed copies refuse every later
+update and have to be reinstalled by hand; it is kept outside the repository and backed up.
+
+`store/updater.ts` looks 15 s after launch and every 6 hours while Assay runs (it lives in the tray
+for days), unless **Look for updates automatically** in Settings › General is off; **Check now**
+always works. The request is a plain GET of that file and sends nothing about the user. A version
+found shows as a chip in the header; nothing downloads until the user asks. The dialog shows the
+release notes and offers **Update and restart**, **Install when I quit** (downloaded now, installed by
+`applyUpdateOnQuit`, which every quit path in `WindowChrome` goes through) and **Skip this version**
+(`updates.skipped`; a manual check shows it again). With runs, terminals, public links or unsaved
+files open, the dialog lists them the way the quit confirmation does and the button turns danger.
+Windows installs in NSIS `passive` mode; macOS and AppImage relaunch through `tauri-plugin-process`.
+A `.deb` or `.rpm` cannot replace itself (`install_kind` reads `APPIMAGE` on Linux), so there the
+chip leads to the release page instead. A development run never looks on its own, and cannot
+install. An automatic check that fails says nothing; only one the user asked for reports the error.
 
 ## Installers
 

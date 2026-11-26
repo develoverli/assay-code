@@ -8,6 +8,17 @@ release may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Workspace › Ports: the ports a project is serving, detected from its terminals, plus ports added
+  by hand, each one a click from a public link through a cloudflared quick tunnel. Every link
+  confirms first, is copied when ready, and closes on Stop, when its port goes quiet, or on quit.
+- cloudflared in Settings › Tools › Toolchain, installable with winget or brew.
+- Self-update from GitHub Releases: a header chip when a new version is published, release notes,
+  and install now or when Assay quits. Signed with minisign; checks can be turned off in
+  Settings › General. Copies installed from `.deb` or `.rpm` are pointed to the release page.
+- Copies already on 0.1.0 have no updater yet: this version has to be installed by hand once.
+
 ## [0.1.0] - 2026-11-22
 
 First open-source release.
