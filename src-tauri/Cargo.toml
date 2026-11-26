@@ -1,6 +1,6 @@
 [package]
 name = "assay"
-version = "0.1.0"
+version = "0.2.0"
 description = "Build, check and ship your code in one place, with local or cloud AI"
 authors = ["develoverli"]
 edition = "2021"

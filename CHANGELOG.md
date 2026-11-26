@@ -8,6 +8,8 @@ release may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
 ### Added
 
 - Workspace › Ports: the ports a project is serving, detected from its terminals, plus ports added
@@ -77,5 +79,6 @@ First open-source release.
 
 - The built-in `sane-stack` skill.
 
-[Unreleased]: https://github.com/develoverli/assay-code/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/develoverli/assay-code/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/develoverli/assay-code/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/develoverli/assay-code/releases/tag/v0.1.0
