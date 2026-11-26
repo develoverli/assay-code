@@ -33,6 +33,7 @@ import {
   useMaximized,
 } from "@/lib/window-frame";
 import { WindowControls } from "@/components/layout/WindowChrome";
+import { UpdateChip } from "@/features/updates/UpdateChip";
 import { RunWindow } from "@/components/RunWindow";
 import { RunDetail } from "@/features/audit/RunDetail";
 import { ProjectsView } from "@/features/projects/ProjectsView";
@@ -323,6 +324,7 @@ export function AppShell() {
           </button>
           <ProjectSwitcher />
           <div data-tauri-drag-region className="h-full flex-1" />
+          <UpdateChip />
           <WindowControls maximized={maximized} />
         </header>
         <ErrorBar />

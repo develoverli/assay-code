@@ -3,6 +3,7 @@ import * as React from "react";
 import { useApp, runningRuns, useRunMetas, useRunningCount } from "@/store/app";
 import { dirtyFiles, liveTerminals, useBench } from "@/store/bench";
 import { activeTunnels, usePorts } from "@/store/ports";
+import { applyUpdateOnQuit } from "@/store/updater";
 import { ensureTray } from "@/lib/tray";
 import { appWindow, nativeFrame } from "@/lib/window-frame";
 import { ConfirmDialog, Dialog, DialogContent } from "@/components/ui/dialog";
@@ -83,10 +84,19 @@ function ControlButton({
 }
 
 /**
+ * Every way out of the app ends here: an update the user asked to install
+ * "when I quit" is installed first (on Windows the installer then closes Assay).
+ */
+async function quitApp(): Promise<void> {
+  await applyUpdateOnQuit();
+  await appWindow.destroy();
+}
+
+/**
  * What quitting would kill or lose, by name. Mounted only while the quit
  * confirmation is open, so only then does it follow the arrays themselves.
  */
-function AtRiskList() {
+export function AtRiskList() {
   const t = useT();
   const runs = useRunMetas();
   const terminals = useBench((s) => s.terminals);
@@ -194,7 +204,7 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
               await showWindow();
               setQuitting(true);
             } else {
-              await appWindow.destroy();
+              await quitApp();
             }
           })().catch(fail("Quit failed"));
         },
@@ -255,7 +265,7 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
   const chooseQuit = React.useCallback(() => {
     setClosing(false);
     if (riskRef.current > 0) setQuitting(true);
-    else appWindow.destroy().catch(fail("Quit failed"));
+    else quitApp().catch(fail("Quit failed"));
   }, [fail]);
 
   // reads what is in flight at the moment of the click, so it needs no array deps
@@ -266,7 +276,7 @@ export function WindowControls({ maximized }: { maximized: boolean }) {
         ...liveTerminals(useBench.getState().terminals).map((term) => closeTerminal(term.id)),
         ...activeTunnels(usePorts.getState().tunnels).map((tun) => usePorts.getState().stop(tun.id)),
       ]);
-      await appWindow.destroy();
+      await quitApp();
     })().catch(fail("Quit failed"));
   }, [cancel, closeTerminal, fail]);
 

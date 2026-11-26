@@ -20,12 +20,15 @@ jobs:
           # one universal binary, so a single .dmg covers Apple silicon and Intel.
           # tsc + the bundle run out of memory on macOS, so it builds with a bare
           # `vite build` (the typecheck already runs in CI), like `pnpm build:mac`.
+          #
+          # createUpdaterArtifacts is switched on here and not in tauri.conf.json: it
+          # needs the signing key, which only CI has, so a local `pnpm build:win` keeps working.
           - platform: macos-latest
-            args: "--target universal-apple-darwin --config '{\"build\":{\"beforeBuildCommand\":\"pnpm exec vite build\"}}'"
+            args: "--target universal-apple-darwin --config '{\"build\":{\"beforeBuildCommand\":\"pnpm exec vite build\"},\"bundle\":{\"createUpdaterArtifacts\":true}}'"
           - platform: ubuntu-22.04
-            args: ""
+            args: "--config '{\"bundle\":{\"createUpdaterArtifacts\":true}}'"
           - platform: windows-latest
-            args: ""
+            args: "--config '{\"bundle\":{\"createUpdaterArtifacts\":true}}'"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -78,11 +81,22 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # signs every installer for the in-app updater (minisign); the public half is
+          # plugins.updater.pubkey in tauri.conf.json. Missing secret = the build fails,
+          # never an unsigned release.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           NODE_OPTIONS: ${{ matrix.platform == 'macos-latest' && '--max-old-space-size=4096' || '' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Assay ${{ github.ref_name }}
           releaseBody: See [CHANGELOG.md](https://github.com/develoverli/assay-code/blob/main/CHANGELOG.md) for what changed.
+          # still a draft: publishing it on GitHub is what sends it to every installed copy,
+          # since the updater reads releases/latest, which never sees a draft
           releaseDraft: true
           prerelease: false
+          # latest.json, which the updater reads; on Windows it points at the NSIS
+          # installer (the one users have), not the MSI
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}

@@ -7,6 +7,7 @@ import { useClaudeUsage } from "@/store/claude-usage";
 import { useBench } from "@/store/bench";
 import { useUI } from "@/store/ui";
 import { usePorts } from "@/store/ports";
+import { useUpdater } from "@/store/updater";
 import { AppShell } from "@/components/layout/AppShell";
 import { Spinner } from "@/components/ui/primitives";
 
@@ -31,6 +32,11 @@ export default function App() {
   // heartbeat that closes one whose server stopped listening
   useEffect(() => {
     usePorts.getState().init().catch(() => undefined);
+  }, []);
+
+  // a new version on GitHub Releases: looked for after launch and every 6 h, unless turned off
+  useEffect(() => {
+    useUpdater.getState().init().catch(() => undefined);
   }, []);
 
   // unattended scans, if the user turned them on

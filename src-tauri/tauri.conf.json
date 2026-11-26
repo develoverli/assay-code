@@ -74,5 +74,16 @@
         }
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY1MDlEQTRBNjJCMDkzQjcKUldTM2s3QmlTdG9KOVZjZ013MUlJTHd0V3JmeW43MzQvQ1hPaXlmbk9Xck4rY2J4eDRMWERhNVMK",
+      "endpoints": [
+        "https://github.com/develoverli/assay-code/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

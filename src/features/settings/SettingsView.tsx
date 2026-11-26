@@ -19,6 +19,7 @@ import { BenchShell } from "./BenchShell";
 import { BackgroundCard } from "./BackgroundCard";
 import { DataCard } from "./DataCard";
 import { GitHubCard } from "@/features/github/GitHubCard";
+import { UpdatesCard } from "@/features/settings/UpdatesCard";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -288,6 +289,7 @@ export function SettingsView() {
           <LanguageCard />
           <GitHubCard />
           <BackgroundCard />
+          <UpdatesCard />
           <DataCard />
         </>
       ),

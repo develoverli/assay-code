@@ -22,6 +22,19 @@ fn lf(sql: &'static str) -> &'static str {
     }
 }
 
+/// How this copy was installed, so the updater knows whether it can replace it.
+/// On Linux only an AppImage can; a .deb or .rpm belongs to the package manager.
+#[tauri::command]
+fn install_kind() -> &'static str {
+    if !cfg!(target_os = "linux") {
+        "bundle"
+    } else if std::env::var_os("APPIMAGE").is_some() {
+        "appimage"
+    } else {
+        "package"
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -111,7 +124,15 @@ pub fn run() {
         },
     ];
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // self-update: checks GitHub Releases, verifies the minisign signature against
+    // the public key in tauri.conf.json, installs; process relaunches afterwards
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+
+    builder
         .manage(pty::PtyState::default())
         .manage(usage::UsageState::default())
         .manage(ports::PortsState::default())
@@ -140,6 +161,7 @@ pub fn run() {
             tunnel::tunnel_start,
             tunnel::tunnel_stop,
             tunnel::tunnel_list,
+            install_kind,
         ])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())

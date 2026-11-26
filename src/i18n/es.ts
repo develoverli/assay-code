@@ -1459,4 +1459,37 @@ export const ES: Record<string, string> = {
     "Hay 1 link público abierto. Salir lo cierra; quien lo tenga verá un error.",
   "{n} public links are open. Quitting closes them; whoever has them gets an error.":
     "Hay {n} links públicos abiertos. Salir los cierra; quien los tenga verá un error.",
+
+  /* --------------------------------- updates -------------------------------- */
+  "Assay {version} is available": "Assay {version} está disponible",
+  "You have {current}.": "Tenés la {current}.",
+  "Released {when}.": "Publicada {when}.",
+  "Release page on GitHub": "Página del release en GitHub",
+  "This copy was installed from a .deb or .rpm package, which Assay cannot replace by itself. Download the new version from the release page.":
+    "Esta copia se instaló desde un paquete .deb o .rpm, que Assay no puede reemplazar por su cuenta. Descargá la versión nueva desde la página del release.",
+  "This is a development run; only an installed copy can update itself.":
+    "Esto es una ejecución de desarrollo; solo una copia instalada puede actualizarse sola.",
+  "Downloading… {done} of {total}": "Descargando… {done} de {total}",
+  "Downloading…": "Descargando…",
+  "Installing… Assay restarts in a moment.": "Instalando… Assay se reinicia en un momento.",
+  "Downloaded and verified. It installs when you quit Assay.": "Descargada y verificada. Se instala cuando salgas de Assay.",
+  "The update failed: {error}": "La actualización falló: {error}",
+  "Updating now restarts Assay and ends this work:": "Actualizar ahora reinicia Assay y corta este trabajo:",
+  "Skip this version": "Saltar esta versión",
+  "Open the release page": "Abrir la página del release",
+  "Install when I quit": "Instalar al salir",
+  "Close everything and update": "Cerrar todo y actualizar",
+  "Update and restart": "Actualizar y reiniciar",
+  "{version} available": "{version} disponible",
+  "Downloading {pct}%": "Descargando {pct}%",
+  "Installing…": "Instalando…",
+  "Updates when you quit": "Se actualiza al salir",
+  "Update failed": "Actualización fallida",
+  "Checking…": "Buscando…",
+  "The check failed: {error}": "La búsqueda falló: {error}",
+  "Up to date · checked {when}": "Al día · revisado {when}",
+  "Look for updates automatically": "Buscar actualizaciones automáticamente",
+  "After launch and every 6 hours, Assay reads the newest published release on GitHub. Nothing about you is sent, and nothing installs until you choose.":
+    "Al abrir y cada 6 horas, Assay lee el último release publicado en GitHub. No se envía nada tuyo y nada se instala hasta que lo elijas.",
+  "Check now": "Buscar ahora",
 };
