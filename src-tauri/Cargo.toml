@@ -45,7 +45,7 @@ png = "0.18"
 
 # Deploy over SFTP. `ring` rather than the default aws-lc, which needs cmake
 # and NASM to build on Windows.
-russh = { version = "0.63", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "3"
 # server passwords live in the OS keychain, never in assay.db
 keyring = "4"
