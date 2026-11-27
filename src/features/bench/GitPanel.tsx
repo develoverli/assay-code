@@ -1,6 +1,7 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   Download,
@@ -33,6 +34,16 @@ import {
   type GitState,
 } from "@/lib/git";
 import { aiChoiceLabel, parseAIChoice, runOneShot, setTaskChoice, type AIInventory } from "@/lib/ai";
+import {
+  buildCommitPrompt,
+  checkReleasePleaseSubject,
+  detectReleasePlease,
+  fixTypeOrder,
+  promptFor,
+  resolveStyle,
+  styleSettingOf,
+  type CommitStyle,
+} from "@/lib/commit-style";
 import { AIMenuItems, useAIInventory, useTaskChoice } from "@/features/shared/AIPicker";
 import { useApp } from "@/store/app";
 import { useBench } from "@/store/bench";
@@ -310,6 +321,7 @@ function CommitForm({
   onPush,
   onPull,
   onPullRequest,
+  style,
 }: {
   message: string;
   onMessage: (value: string) => void;
@@ -332,8 +344,12 @@ function CommitForm({
   onPush: () => void;
   onPull: () => void;
   onPullRequest: () => void;
+  /** The project's commit style: release-please gets its subject checked. */
+  style: CommitStyle;
 }) {
   const t = useT();
+  const subjectCheck = style === "release-please" ? checkReleasePleaseSubject(message) : "ok";
+  const fixed = subjectCheck === "emoji-first" ? fixTypeOrder(message) : message;
   const canCommit = pickedCount > 0 && message.trim().length > 0 && busy === null;
   return (
     <div className="shrink-0 border-t border-border bg-surface p-2">
@@ -384,10 +400,35 @@ function CommitForm({
         value={message}
         onChange={(e) => onMessage(e.target.value)}
         rows={2}
-        placeholder={t("✨ feat(scope): what this change does")}
+        placeholder={
+          style === "release-please" ? t("feat(scope): ✨ what this change does") : t("✨ feat(scope): what this change does")
+        }
         aria-label={t("Commit message")}
+        aria-describedby={subjectCheck !== "ok" ? "commit-subject-check" : undefined}
         className="text-[12px]"
       />
+      {/* a warning, not a gate: a commit release-please skips is still a valid commit */}
+      {subjectCheck !== "ok" && (
+        <div id="commit-subject-check" className="mt-1.5 flex items-start gap-1.5 text-[11px] text-warn">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+          <span className="flex-1">
+            {subjectCheck === "emoji-first"
+              ? t("release-please will ignore this commit: the type has to come first.")
+              : t("release-please will ignore this commit: it has no type (feat:, fix:…).")}
+          </span>
+          {subjectCheck === "emoji-first" && fixed !== message && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-my-1 h-6 shrink-0 px-1.5 text-[11px]"
+              onClick={() => onMessage(fixed)}
+              title={fixed}
+            >
+              {t("Fix order")}
+            </Button>
+          )}
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <Button variant="primary" size="sm" disabled={!canCommit} loading={busy === "commit"} onClick={() => onCommit(false)}>
           {t("Commit {n}", { n: pickedCount })}
@@ -481,6 +522,21 @@ export function GitPanel({ root }: { root: string }) {
   const setError = useBench((s) => s.setError);
   const applyGitChanges = useBench((s) => s.applyGitChanges);
   const gitStatus = useBench((s) => s.gitStatus);
+  const project = useApp((s) => s.projects.find((p) => p.id === s.activeProjectId));
+  const styleSetting = styleSettingOf(project);
+  const [releasePlease, setReleasePlease] = React.useState(false);
+  const style = resolveStyle(styleSetting, releasePlease);
+
+  // the repository's own files decide `auto`; asked again when the folder changes
+  React.useEffect(() => {
+    let ignore = false;
+    void detectReleasePlease(root).then((found) => {
+      if (!ignore) setReleasePlease(found);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [root]);
 
   const [state, setState] = React.useState<GitState | null>(null);
   const [commits, setCommits] = React.useState<GitCommit[]>([]);
@@ -587,15 +643,8 @@ export function GitPanel({ root }: { root: string }) {
         setError(t("Nothing to describe: the selected files have no changes to read."));
         return;
       }
-      const prompt = [
-        "Write ONE git commit subject line for this diff. Output only that line, nothing else.",
-        "Format: gitmoji + Conventional Commits, e.g. `✨ feat(auth): add magic link login`.",
-        "Types: ✨ feat · 🐛 fix · ♻️ refactor · 📝 docs · 🎨 style · ⚡ perf · ✅ test · 🔧 chore · 🔒 security · ⬆️ deps.",
-        "English, imperative mood, lowercase after the type, no trailing period, at most 72 characters.",
-        "Describe what the change does, not which files moved.",
-        "",
-        diff,
-      ].join("\n");
+      // the project's style picks the instructions (Settings › AI, or its own prompt); the diff goes last
+      const prompt = buildCommitPrompt(await promptFor(style, project), diff);
       const out = await runOneShot(choice, prompt);
       // an agent that explains itself still has to hand back one line
       const line = out
@@ -783,6 +832,7 @@ export function GitPanel({ root }: { root: string }) {
         onPush={() => setAsking("push")}
         onPull={runPull}
         onPullRequest={() => setAsking("pr")}
+        style={style}
       />
 
       <PushConfirm

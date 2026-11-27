@@ -122,6 +122,12 @@ pub fn run() {
             sql: lf(include_str!("../migrations/014_project_ports.sql")),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 15,
+            description: "commit message style and custom prompt per project",
+            sql: lf(include_str!("../migrations/015_project_commit_style.sql")),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let builder = tauri::Builder::default();

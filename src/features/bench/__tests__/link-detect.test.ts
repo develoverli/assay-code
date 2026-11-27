@@ -88,6 +88,10 @@ describe("fileUrlToPath", () => {
 describe("targets", () => {
   it("tells images from code by extension", () => {
     expect(fileTarget("D:/a/shot.PNG", 0).kind).toBe("image");
+    expect(fileTarget("D:/a/demo.mp4", 0).kind).toBe("video");
+    expect(fileTarget("D:/a/clip.WEBM", 0).kind).toBe("video");
+    expect(fileTarget("D:/a/voice.mp3", 0).kind).toBe("audio");
+    expect(fileTarget("D:/a/notes.md", 0).kind).toBe("code");
     expect(fileTarget("D:/a/main.ts", 3)).toEqual({ kind: "code", path: "D:/a/main.ts", name: "main.ts", line: 3 });
   });
 

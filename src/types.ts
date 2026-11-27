@@ -69,6 +69,10 @@ export interface Project {
   github_repo?: string | null;
   /** That repository's visibility as GitHub last reported it; null when not known yet. */
   github_private?: boolean | null;
+  /** `auto` | `gitmoji` | `release-please` | `custom`; null reads as `auto` (`lib/commit-style`). */
+  commit_style?: string | null;
+  /** The instructions Write with AI sends when `commit_style` is `custom`. */
+  commit_prompt?: string | null;
   created_at: number;
   updated_at: number;
 }

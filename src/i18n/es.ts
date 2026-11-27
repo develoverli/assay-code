@@ -1492,4 +1492,127 @@ export const ES: Record<string, string> = {
   "After launch and every 6 hours, Assay reads the newest published release on GitHub. Nothing about you is sent, and nothing installs until you choose.":
     "Al abrir y cada 6 horas, Assay lee el último release publicado en GitHub. No se envía nada tuyo y nada se instala hasta que lo elijas.",
   "Check now": "Buscar ahora",
+
+  /* ------------------------------ commit style ------------------------------ */
+  "Commit style": "Estilo de commit",
+  "How Write with AI shapes commit subjects in Workspace › Git. The shared prompts are in Settings › AI.":
+    "Cómo arma Escribir con IA el asunto del commit en Workspace › Git. Los prompts compartidos están en Ajustes › IA.",
+  "release-please found here: type first (feat: ✨ …)": "release-please detectado: el tipo primero (feat: ✨ …)",
+  "No release-please files here: gitmoji first (✨ feat: …)": "Sin archivos de release-please: gitmoji primero (✨ feat: …)",
+  "Gitmoji first": "Gitmoji primero",
+  "Custom prompt": "Prompt propio",
+  "This project's own instructions": "Instrucciones propias de este proyecto",
+  "Commit prompt": "Prompt de commit",
+  "Sent before the diff, which Assay adds itself. The answer is cut to its first line. Empty uses the gitmoji prompt.":
+    "Se envía antes del diff, que Assay agrega solo. La respuesta se corta a su primera línea. Vacío usa el prompt de gitmoji.",
+  "Commit message prompts": "Prompts del mensaje de commit",
+  "What Write with AI asks for, per commit style. Assay adds the diff after it and keeps only the first line of the answer.":
+    "Lo que pide Escribir con IA, según el estilo de commit. Assay agrega el diff después y se queda solo con la primera línea de la respuesta.",
+  "Projects without release-please: ✨ feat(scope): …": "Proyectos sin release-please: ✨ feat(scope): …",
+  "Projects with release-please's files, or set to it: feat(scope): ✨ …. release-please skips a subject that starts with an emoji.":
+    "Proyectos con los archivos de release-please, o con ese estilo elegido: feat(scope): ✨ …. release-please ignora un asunto que empieza con emoji.",
+  "Already the default": "Ya es el predeterminado",
+  "Restore default": "Restaurar predeterminado",
+  Saved: "Guardado",
+  "feat(scope): ✨ what this change does": "feat(scope): ✨ qué hace este cambio",
+  "release-please will ignore this commit: the type has to come first.":
+    "release-please va a ignorar este commit: el tipo tiene que ir primero.",
+  "release-please will ignore this commit: it has no type (feat:, fix:…).":
+    "release-please va a ignorar este commit: no tiene tipo (feat:, fix:…).",
+  "Fix order": "Corregir orden",
+
+  /* -------------------------------- releases -------------------------------- */
+  Releases: "Releases",
+  "{label} (1 change to release)": "{label} (1 cambio para publicar)",
+  "{label} ({n} changes to release)": "{label} ({n} cambios para publicar)",
+  "A breaking change bumps the major version.": "Un cambio incompatible sube la versión mayor.",
+  "Before 1.0 a breaking change bumps the minor (bump-minor-pre-major).":
+    "Antes de 1.0 un cambio incompatible sube la menor (bump-minor-pre-major).",
+  "A new feature bumps the minor version.": "Una feature nueva sube la versión menor.",
+  "Before 1.0 a feature bumps only the patch (bump-patch-for-minor-pre-major). Remove that line from release-please-config.json for features to bump the minor.":
+    "Antes de 1.0 una feature sube solo el patch (bump-patch-for-minor-pre-major). Quita esa línea de release-please-config.json para que las features suban la menor.",
+  "Only fixes landed: the patch version moves.": "Solo entraron fixes: sube el patch.",
+  "Copy link": "Copiar link",
+  "Open in the browser": "Abrir en el navegador",
+  breaking: "incompatible",
+  "Last release": "Último release",
+  "none yet": "ninguno aún",
+  "Next release": "Próximo release",
+  "nothing to release": "nada para publicar",
+  "Never tagged: this would be the first version.": "Nunca tuvo tag: esta sería la primera versión.",
+  "No feature or fix since the last release. Docs, chores and refactors do not cut one on their own.":
+    "Ninguna feature ni fix desde el último release. Docs, chores y refactors no generan uno por sí solos.",
+  "The remote is not on GitHub, so the release pull request cannot be read from here.":
+    "El remote no está en GitHub, así que el PR de release no se puede leer desde acá.",
+  "Reading the release pull request from GitHub…": "Leyendo el PR de release desde GitHub…",
+  "Link GitHub to see the release pull request and the newest release.":
+    "Vincula GitHub para ver el PR de release y el último release.",
+  "Open Settings": "Abrir Ajustes",
+  "No release pull request open yet. release-please opens it after the next push to the default branch.":
+    "Todavía no hay PR de release abierto. release-please lo abre después del próximo push a la rama principal.",
+  "No release pull request open.": "No hay PR de release abierto.",
+  "{name} · published {when}": "{name} · publicado {when}",
+  "There are uncommitted changes. Commit them first.": "Hay cambios sin commitear. Commitéalos primero.",
+  "This branch was never pushed. Push it first.": "Esta rama nunca se pusheó. Pushéala primero.",
+  "There are commits not pushed yet. Push the branch first.": "Hay commits sin pushear. Pushea la rama primero.",
+  "Type the version to tag.": "Escribe la versión del tag.",
+  "A tag here is a version: v1.2.3 or 1.2.3.": "Acá un tag es una versión: v1.2.3 o 1.2.3.",
+  "That tag already exists.": "Ese tag ya existe.",
+  "git refused to create the tag.": "git no quiso crear el tag.",
+  "The tag {tag} was created here but not pushed. Push it from a terminal with git push origin {tag}.":
+    "El tag {tag} se creó acá pero no se pusheó. Pushéalo desde una terminal con git push origin {tag}.",
+  "Version tag": "Tag de versión",
+  "Create tag": "Crear tag",
+  "{file} says {version}; the tag will be {tag}. Assay does not change version files.":
+    "{file} dice {version}; el tag será {tag}. Assay no modifica los archivos de versión.",
+  "Create and push {tag}?": "¿Crear y pushear {tag}?",
+  "Create & push": "Crear y pushear",
+  "Tags the current commit on {branch} and sends the tag to the remote. A pushed tag usually starts the release workflow.":
+    "Etiqueta el commit actual de {branch} y envía el tag al remote. Un tag pusheado normalmente dispara el workflow de release.",
+  "Reading tags and commits…": "Leyendo tags y commits…",
+  "This folder is not a git repository, so there is no release history to read.":
+    "Esta carpeta no es un repositorio git, así que no hay historial de releases para leer.",
+  "Since {tag}": "Desde {tag}",
+  "All commits (never tagged)": "Todos los commits (nunca tuvo tag)",
+  "Tag releases": "Releases por tag",
+  "Read again": "Volver a leer",
+  "release-please-config.json could not be read as JSON; the prediction uses release-please's defaults.":
+    "release-please-config.json no se pudo leer como JSON; la predicción usa los valores por defecto de release-please.",
+  "No commits since the last release.": "No hay commits desde el último release.",
+  Features: "Features",
+  Fixes: "Fixes",
+  "Other changes": "Otros cambios",
+  "Ignored by release-please": "Ignorados por release-please",
+  "Without a type": "Sin tipo",
+  "release-please only reads subjects that start with the type (feat: ✨ …). These will not appear in the changelog or move the version.":
+    "release-please solo lee asuntos que empiezan con el tipo (feat: ✨ …). Estos no van a aparecer en el changelog ni van a mover la versión.",
+  "Per-package prediction is not supported yet: see the release pull request.":
+    "La predicción por paquete todavía no está soportada: mira el PR de release.",
+  "New release": "Nuevo release",
+  "{tag} created and pushed.": "{tag} creado y pusheado.",
+  "GitHub no longer accepts the saved token.": "GitHub ya no acepta el token guardado.",
+  "No GitHub account is linked.": "No hay ninguna cuenta de GitHub vinculada.",
+  "The GitHub link is older than six months and has to be made again.":
+    "El vínculo con GitHub tiene más de seis meses y hay que hacerlo de nuevo.",
+
+  /* ------------------------------- split panes ------------------------------ */
+  Panel: "Panel",
+  "Split right": "Dividir a la derecha",
+  "Split down": "Dividir abajo",
+  "Move to panel": "Mover al panel",
+  "Panel {n}": "Panel {n}",
+  "Not ready yet.": "Todavía no está listo.",
+  "This is the only tab in its panel.": "Es la única pestaña de su panel.",
+  "Not enough room to split this panel.": "No hay espacio para dividir este panel.",
+  "Resize panes": "Redimensionar paneles",
+
+  /* ------------------------------ link preview ------------------------------ */
+  "Too large to play here ({size} MB). Show it in the folder to open it with your player.":
+    "Demasiado grande para reproducir acá ({size} MB). Muéstralo en la carpeta para abrirlo con tu reproductor.",
+  "Reading the video…": "Leyendo el video…",
+  "Reading the audio…": "Leyendo el audio…",
+  "Open here": "Abrir aquí",
+  Preview: "Previsualizar",
+  "Hide preview": "Ocultar vista previa",
+  "Show in folder": "Ver en explorador",
 };

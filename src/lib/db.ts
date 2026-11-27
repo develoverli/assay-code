@@ -188,8 +188,19 @@ export async function updateProject(id: string, patch: Partial<Project>): Promis
   if (!cur) return;
   const next = { ...cur, ...patch, updated_at: now() };
   await db.execute(
-    `UPDATE projects SET name=$2,path=$3,url=$4,stack=$5,authorized=$6,updated_at=$7 WHERE id=$1`,
-    [id, next.name, next.path ?? null, next.url ?? null, JSON.stringify(next.stack), b(next.authorized), next.updated_at],
+    `UPDATE projects SET name=$2,path=$3,url=$4,stack=$5,authorized=$6,updated_at=$7,commit_style=$8,commit_prompt=$9
+     WHERE id=$1`,
+    [
+      id,
+      next.name,
+      next.path ?? null,
+      next.url ?? null,
+      JSON.stringify(next.stack),
+      b(next.authorized),
+      next.updated_at,
+      next.commit_style ?? null,
+      next.commit_prompt ?? null,
+    ],
   );
 }
 

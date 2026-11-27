@@ -9,7 +9,13 @@ import { detectStack } from "@/lib/detect";
 import type { Project } from "@/types";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { TagPicker } from "@/features/projects/Tags";
-import { Badge, Button, Field, Input, SwitchField } from "@/components/ui/primitives";
+import { Badge, Button, Field, Input, Select, SwitchField, Textarea } from "@/components/ui/primitives";
+import {
+  DEFAULT_TEMPLATES,
+  detectReleasePlease,
+  styleSettingOf,
+  type CommitStyleSetting,
+} from "@/lib/commit-style";
 import { useT } from "@/lib/i18n";
 
 const basename = (p: string) => {
@@ -25,6 +31,8 @@ interface Draft {
   authorized: boolean;
   detected: string[];
   tags: string[];
+  commitStyle: CommitStyleSetting;
+  commitPrompt: string;
 }
 
 type DraftAction = { type: "reset"; project?: Project | null } | { type: "patch"; patch: Partial<Draft> };
@@ -39,13 +47,24 @@ function draftReducer(state: Draft, action: DraftAction): Draft {
         authorized: action.project?.authorized ?? false,
         detected: action.project?.stack ?? [],
         tags: action.project?.tags ?? [],
+        commitStyle: styleSettingOf(action.project),
+        commitPrompt: action.project?.commit_prompt ?? "",
       };
     case "patch":
       return { ...state, ...action.patch };
   }
 }
 
-const EMPTY_DRAFT: Draft = { name: "", path: "", url: "", authorized: false, detected: [], tags: [] };
+const EMPTY_DRAFT: Draft = {
+  name: "",
+  path: "",
+  url: "",
+  authorized: false,
+  detected: [],
+  tags: [],
+  commitStyle: "auto",
+  commitPrompt: "",
+};
 
 export function ProjectDialog({
   open: isOpen,
@@ -65,7 +84,21 @@ export function ProjectDialog({
   const setError = useApp((s) => s.setError);
   const t = useT();
   const [draft, dispatch] = React.useReducer(draftReducer, EMPTY_DRAFT);
-  const { name, path, url, authorized, detected, tags } = draft;
+  const { name, path, url, authorized, detected, tags, commitStyle, commitPrompt } = draft;
+  /** What `auto` resolves to for the folder in the field, said in the option's hint. */
+  const [releasePlease, setReleasePlease] = React.useState(false);
+
+  React.useEffect(() => {
+    const folder = path.trim();
+    if (!isOpen || !folder) return setReleasePlease(false);
+    let ignore = false;
+    void detectReleasePlease(folder).then((found) => {
+      if (!ignore) setReleasePlease(found);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [isOpen, path]);
   const [busy, setBusy] = React.useState(false);
   /** New project only: go straight to its Deploy panel with the server form open. */
   const [deploys, setDeploys] = React.useState(false);
@@ -110,7 +143,18 @@ export function ProjectDialog({
         stack,
         authorized,
       };
-      const id = project ? (await updateProject(project.id, data), project.id) : (await createProject(data)).id;
+      const commit = {
+        commit_style: commitStyle === "auto" ? null : commitStyle,
+        commit_prompt: commitPrompt.trim() ? commitPrompt : null,
+      };
+      let id: string;
+      if (project) {
+        await updateProject(project.id, { ...data, ...commit });
+        id = project.id;
+      } else {
+        id = (await createProject(data)).id;
+        if (commit.commit_style || commit.commit_prompt) await updateProject(id, commit);
+      }
       await setProjectTags(id, tags);
       onOpenChange(false);
       if (!project && deploys && data.path) {
@@ -175,6 +219,45 @@ export function ProjectDialog({
           >
             <TagPicker selected={tags} onChange={(ids) => dispatch({ type: "patch", patch: { tags: ids } })} />
           </Field>
+          {path.trim() && (
+            <Field
+              label={t("Commit style")}
+              hint={t("How Write with AI shapes commit subjects in Workspace › Git. The shared prompts are in Settings › AI.")}
+            >
+              <Select
+                value={commitStyle}
+                onChange={(v) => dispatch({ type: "patch", patch: { commitStyle: v as CommitStyleSetting } })}
+                aria-label={t("Commit style")}
+                options={[
+                  {
+                    value: "auto",
+                    label: t("Auto"),
+                    hint: releasePlease
+                      ? t("release-please found here: type first (feat: ✨ …)")
+                      : t("No release-please files here: gitmoji first (✨ feat: …)"),
+                  },
+                  { value: "gitmoji", label: t("Gitmoji first"), hint: "✨ feat(scope): …" },
+                  { value: "release-please", label: "release-please", hint: "feat(scope): ✨ …" },
+                  { value: "custom", label: t("Custom prompt"), hint: t("This project's own instructions") },
+                ]}
+              />
+            </Field>
+          )}
+          {path.trim() && commitStyle === "custom" && (
+            <Field
+              label={t("Commit prompt")}
+              hint={t("Sent before the diff, which Assay adds itself. The answer is cut to its first line. Empty uses the gitmoji prompt.")}
+            >
+              <Textarea
+                value={commitPrompt}
+                onChange={(e) => dispatch({ type: "patch", patch: { commitPrompt: e.target.value } })}
+                rows={6}
+                placeholder={DEFAULT_TEMPLATES.gitmoji}
+                aria-label={t("Commit prompt")}
+                className="font-mono text-[11px]"
+              />
+            </Field>
+          )}
           <SwitchField
             label={t("Authorized target")}
             hint={t("I own this target or am authorized to test it.")}

@@ -8,6 +8,30 @@ release may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Commit style per project: Write with AI puts the type first (`feat(scope): ✨ …`) in repositories
+  managed by release-please, detected from its config or manifest, and keeps gitmoji first
+  elsewhere. The project dialog can force either style or set a prompt of its own.
+- Settings › AI › Commit message prompts: the two shared prompts behind Write with AI, editable,
+  with Restore default.
+- Workspace › Git warns when release-please would ignore a subject (emoji first or no type) and
+  offers Fix order. The commit is never blocked.
+- Workspace › Releases: the last tag, commits since grouped by type, and the next version predicted
+  with release-please's rules, with a badge counting what would ship. release-please projects show
+  the open release pull request and the newest release from GitHub (read only); tag-released
+  projects get Create tag, which tags HEAD and pushes the tag after showing both commands.
+- Workspace split panes: drag a tab onto a pane's edge to split it (side by side, stacked, or in a
+  grid), onto a strip to move it there; dividers resize. Each pane has its own tabs, the layout is
+  kept per project, and terminals move between panes without restarting. Ctrl+\ splits right,
+  Ctrl+Alt+arrows move between panes, and every tab's menu offers Split right, Split down and Move
+  to panel.
+
+### Changed
+
+- Link previews show pictures, video and audio at once; code and pages get a bar (Open here,
+  Preview, Open in browser, Show in folder, Copy) and render only when Preview is pressed.
+
 ## [0.2.0] - 2026-11-26
 
 ### Added

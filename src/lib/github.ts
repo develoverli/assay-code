@@ -449,6 +449,90 @@ export async function listRepos(token: string): Promise<Repo[]> {
   return out;
 }
 
+/* --------------------------------- releases --------------------------------- */
+/** The pull request release-please keeps open with the next version and its changelog. */
+export interface ReleasePullRequest {
+  number: number;
+  title: string;
+  url: string;
+}
+
+export interface PublishedRelease {
+  tag: string;
+  name: string;
+  url: string;
+  /** Epoch ms; 0 when GitHub gave none (a draft). */
+  publishedAt: number;
+}
+
+export interface ReleaseInfo {
+  pullRequest: ReleasePullRequest | null;
+  latest: PublishedRelease | null;
+}
+
+/** The label release-please puts on its pull request until the release is cut. */
+const RELEASE_PENDING_LABEL = "autorelease: pending";
+
+/** `owner/name` from a repository's web URL on github.com, else null. */
+export function githubRepoFromWebUrl(url: string | null): string | null {
+  if (!url) return null;
+  const m = /^https:\/\/github\.com\/([^/\s]+)\/([^/\s]+?)\/?$/i.exec(url.trim());
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
+/** A GET whose 404 is an answer ("there is none"), not a failure. */
+async function apiOrNull<T>(token: string, path: string): Promise<T | null> {
+  try {
+    return (await api<T>(token, path)).body;
+  } catch (e) {
+    if (e instanceof Error && /answered 404\b/.test(e.message)) return null;
+    throw e;
+  }
+}
+
+interface IssueResponse {
+  number: number;
+  title: string;
+  html_url: string;
+  pull_request?: unknown;
+}
+
+interface ReleaseResponse {
+  tag_name: string;
+  name: string | null;
+  html_url: string;
+  published_at: string | null;
+}
+
+/**
+ * Read-only: the open release pull request (found by its label) and the newest
+ * published release. Two GETs with the linked account; nothing is written.
+ */
+export async function fetchReleaseInfo(fullName: string): Promise<ReleaseInfo> {
+  const [owner, name] = fullName.split("/");
+  const repo = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+  return withGitHubToken(async (token) => {
+    const label = encodeURIComponent(RELEASE_PENDING_LABEL);
+    const [issues, latest] = await Promise.all([
+      apiOrNull<IssueResponse[]>(token, `${repo}/issues?state=open&labels=${label}&per_page=10`),
+      apiOrNull<ReleaseResponse>(token, `${repo}/releases/latest`),
+    ]);
+    // the issues endpoint lists pull requests too; only those carry `pull_request`
+    const pr = (issues ?? []).find((i) => i.pull_request != null);
+    return {
+      pullRequest: pr ? { number: pr.number, title: pr.title, url: pr.html_url } : null,
+      latest: latest
+        ? {
+            tag: latest.tag_name,
+            name: latest.name?.trim() || latest.tag_name,
+            url: latest.html_url,
+            publishedAt: latest.published_at ? Date.parse(latest.published_at) : 0,
+          }
+        : null,
+    };
+  });
+}
+
 /** Case-insensitive match on `owner/name` and the description, every word required. */
 export function filterRepos(repos: Repo[], query: string): Repo[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);

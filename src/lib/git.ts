@@ -248,6 +248,46 @@ export async function pull(root: string): Promise<GitResult> {
   return runWithRemoteAuth(root, await trackedRemote(root, branch, remote), ["pull", "--no-rebase", "--ff", "--no-edit"]);
 }
 
+/* ----------------------------------- tags ----------------------------------- */
+/** Tags reachable from HEAD, newest version first — what "the last release" is measured from. */
+export async function tagsOnHead(root: string): Promise<string[]> {
+  const { code, out } = await git(root, ["tag", "--merged", "HEAD", "--sort=-v:refname"]);
+  if (code !== 0) return [];
+  return out.split(NEWLINE).map((l) => l.trim()).filter(Boolean);
+}
+
+/** Every commit after `since` up to HEAD (all of history when there is no tag yet), newest first. */
+export async function commitsSince(root: string, since: string | null, limit = 500): Promise<GitCommit[]> {
+  const range = since ? [`refs/tags/${since}..HEAD`] : ["HEAD"];
+  const { code, out } = await git(root, ["log", `-n${limit}`, `--pretty=format:%h%x1f%s%x1f%an%x1f%at`, ...range]);
+  if (code !== 0) return [];
+  return out
+    .split(NEWLINE)
+    .filter(Boolean)
+    .map((line) => {
+      const [hash, subject, author, at] = line.split(SEP);
+      return { hash, subject: subject ?? "", author: author ?? "", at: Number(at) * 1000 || 0 };
+    });
+}
+
+/** An annotated tag on HEAD. The name and message go as arguments, never through a shell. */
+export async function createTag(root: string, name: string, message: string): Promise<GitResult> {
+  return run(root, ["tag", "-a", name, "-m", message]);
+}
+
+/** The remote a tag goes to: the current branch's, else the first one. */
+export async function tagRemote(root: string): Promise<string | null> {
+  const { branch, remote } = await upstreamState(root);
+  return trackedRemote(root, branch, remote);
+}
+
+/** Push one tag, with the linked GitHub account when the remote is github.com over https. */
+export async function pushTag(root: string, name: string): Promise<GitResult> {
+  const remote = await tagRemote(root);
+  if (!remote) return { ok: false, output: "No remote to push to." };
+  return runWithRemoteAuth(root, remote, ["push", remote, `refs/tags/${name}`]);
+}
+
 /* ------------------------------ friendly errors ----------------------------- */
 /** What git's refusal means, in a sentence a person can act on. First match wins. */
 const EXPLANATIONS: [RegExp, string][] = [

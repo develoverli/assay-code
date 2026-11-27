@@ -61,10 +61,13 @@ export function ScriptsBar({
   projectId,
   cwd,
   onRun,
+  shortcut = true,
 }: {
   projectId: string | null;
   cwd: string;
   onRun: (label: string, command: string) => void;
+  /** Only one strip answers Ctrl+Shift+R when Workspace is split: the active pane's. */
+  shortcut?: boolean;
 }) {
   const t = useT();
   const [open, setOpen] = React.useState(false);
@@ -73,6 +76,7 @@ export function ScriptsBar({
 
   // Ctrl+Shift+R opens the palette from anywhere in Workspace
   React.useEffect(() => {
+    if (!shortcut) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && (e.key === "R" || e.key === "r")) {
         e.preventDefault();
@@ -82,7 +86,7 @@ export function ScriptsBar({
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [shortcut]);
 
   // the repo may have gained a script since the last look
   React.useEffect(() => {

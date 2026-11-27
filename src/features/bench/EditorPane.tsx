@@ -10,14 +10,45 @@ import { BASE_EDITOR_OPTIONS } from "./monaco-options";
  * Monaco over the project's real files. Saving is Ctrl+S only, never automatic:
  * an agent may be editing the same tree from a terminal.
  *
+ * Every pane has its own editor; the models are shared, one per open file, so a
+ * file moved to another pane keeps its undo history, and its cursor travels with
+ * it (`viewStates`). A file is in one pane at a time, so two editors never edit
+ * the same model.
+ *
  * Models are keyed by the store's path, not Monaco's URI: on Windows the URI
  * lowercases the drive letter, so a fresh model looked closed and was disposed.
  */
 
-export function EditorPane() {
-  const t = useT();
+const models = new Map<string, Monaco.editor.ITextModel>();
+const viewStates = new Map<string, Monaco.editor.ICodeEditorViewState>();
+
+function modelFor(monaco: typeof Monaco, path: string, name: string, content: string): Monaco.editor.ITextModel {
+  let model = models.get(path);
+  if (!model || model.isDisposed()) {
+    model = monaco.editor.createModel(content, languageOf(name), monaco.Uri.file(path));
+    models.set(path, model);
+  }
+  return model;
+}
+
+/** A closed tab's model goes with it. Mounted once by the work area. */
+export function useEditorLifecycle(): void {
   const files = useBench((s) => s.files);
-  const activeFile = useBench((s) => s.activeFile);
+  React.useEffect(() => {
+    const open = new Set(files.map((f) => f.path));
+    for (const [path, model] of models) {
+      if (open.has(path)) continue;
+      model.dispose();
+      models.delete(path);
+      viewStates.delete(path);
+    }
+  }, [files]);
+}
+
+/** One pane's editor, showing `path` (or nothing). `focused` gives it the keyboard. */
+export function EditorSlot({ path, focused }: { path: string | null; focused: boolean }) {
+  const t = useT();
+  const file = useBench((s) => (path ? (s.files.find((f) => f.path === path) ?? null) : null));
   const editFile = useBench((s) => s.editFile);
   const saveFileAt = useBench((s) => s.saveFileAt);
   const reveal = useBench((s) => s.reveal);
@@ -26,15 +57,8 @@ export function EditorPane() {
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const editorRef = React.useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = React.useRef<typeof Monaco | null>(null);
-  const modelsRef = React.useRef(new Map<string, Monaco.editor.ITextModel>());
-  // read inside Monaco callbacks without rebuilding the editor; written after
-  // the commit, because render has to stay pure
-  const activeRef = React.useRef<string | null>(activeFile);
-  React.useEffect(() => {
-    activeRef.current = activeFile;
-  });
-
-  const file = files.find((f) => f.path === activeFile) ?? null;
+  /** The path this editor shows right now, read inside Monaco callbacks. */
+  const shownRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!hostRef.current || editorRef.current) return;
@@ -46,44 +70,59 @@ export function EditorPane() {
       smoothScrolling: true,
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      const path = activeRef.current;
-      if (path) void saveFileAt(path);
+      const current = shownRef.current;
+      if (current) void saveFileAt(current);
     });
     editor.onDidChangeModelContent(() => {
-      const path = activeRef.current;
-      if (path) editFile(path, editor.getValue());
+      const current = shownRef.current;
+      if (current) editFile(current, editor.getValue());
     });
     editorRef.current = editor;
-
-    const models = modelsRef.current;
     return () => {
+      const current = shownRef.current;
+      if (current) {
+        const state = editor.saveViewState();
+        if (state) viewStates.set(current, state);
+      }
+      // the models are shared and outlive this pane; only the editor goes
+      editor.setModel(null);
       editor.dispose();
       editorRef.current = null;
-      for (const model of models.values()) model.dispose();
-      models.clear();
+      shownRef.current = null;
     };
   }, [editFile, saveFileAt]);
 
-  // one model per open file, so switching tabs keeps undo history and cursor
+  // show this pane's file, keeping where the cursor was when it was last on screen
   React.useEffect(() => {
     const monaco = monacoRef.current;
     const editor = editorRef.current;
     if (!monaco || !editor) return;
+    const before = shownRef.current;
+    const next = file?.path ?? null;
+    if (before && before !== next) {
+      const state = editor.saveViewState();
+      if (state) viewStates.set(before, state);
+    }
     if (!file) {
+      shownRef.current = null;
       editor.setModel(null);
       return;
     }
-    let model = modelsRef.current.get(file.path);
-    if (!model || model.isDisposed()) {
-      model = monaco.editor.createModel(file.content, languageOf(file.name), monaco.Uri.file(file.path));
-      modelsRef.current.set(file.path, model);
+    const model = modelFor(monaco, file.path, file.name, file.content);
+    if (editor.getModel() !== model) {
+      shownRef.current = file.path;
+      editor.setModel(model);
+      const state = viewStates.get(file.path);
+      if (state) editor.restoreViewState(state);
     }
-    if (editor.getModel() !== model) editor.setModel(model);
     editor.updateOptions({ readOnly: file.readOnly });
-    editor.focus();
   }, [file]);
 
-  // a search hit or a finding asks for a line: land on it, centred and selected
+  React.useEffect(() => {
+    if (focused && file) editorRef.current?.focus();
+  }, [focused, file]);
+
+  // a search hit or a finding asks for a line: the pane showing that file lands on it
   React.useEffect(() => {
     const editor = editorRef.current;
     if (!reveal || !editor || !file || file.path !== reveal.path) return;
@@ -95,16 +134,6 @@ export function EditorPane() {
     editor.focus();
     clearReveal();
   }, [reveal, file, clearReveal]);
-
-  // a closed tab's model goes with it — keyed by the same path the store uses
-  React.useEffect(() => {
-    const open = new Set(files.map((f) => f.path));
-    for (const [path, model] of modelsRef.current) {
-      if (open.has(path)) continue;
-      model.dispose();
-      modelsRef.current.delete(path);
-    }
-  }, [files]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

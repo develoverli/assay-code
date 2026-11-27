@@ -8,12 +8,12 @@ import { useT } from "@/lib/i18n";
 import { pasteIntoTerminal, writeClipboard } from "@/lib/clipboard";
 import { droppedPathText, resolveShell } from "@/lib/bench-term";
 import { registerTerminalLinks } from "./terminal-links";
-import { LinkPreviewPopover } from "./LinkPreview";
 
 /**
  * The terminals, over real PTYs. Each session owns a detached DOM node moved in
- * and out of the pane; xterm instances and the output bridge live outside React
- * so a tab switch, view change or remount never loses a session's screen.
+ * and out of whichever pane shows it; xterm instances and the output bridge live
+ * outside React so a tab switch, a move to another pane, a view change or a
+ * remount never loses a session's screen.
  */
 
 interface Attached {
@@ -138,60 +138,24 @@ async function attach(id: string): Promise<Attached> {
   return entry;
 }
 
-function detachAll(container: HTMLElement, keep: string | null): void {
-  for (const [id, a] of attached) {
-    if (id !== keep && a.host.parentElement === container) a.host.remove();
-  }
+/** Where a session's node is now, so a slot that lost it to another pane does not pull it back out. */
+function release(id: string, container: HTMLElement): void {
+  const a = attached.get(id);
+  if (a && a.host.parentElement === container) a.host.remove();
 }
 
-/** The terminal surface; its tabs live in the shared strip above it. */
-export function TerminalPane() {
-  const t = useT();
-  // every project's sessions, because a closed tab's screen is disposed here and
-  // hiding one behind a project switch must not throw its buffer away
+/**
+ * The output bridge, and disposing the screen of a tab that was closed. Mounted
+ * once by the work area, whatever panes exist.
+ */
+export function useTerminalLifecycle(): void {
+  // every project's sessions: hiding one behind a project switch must not throw its buffer away
   const terminals = useBench((s) => s.terminals);
-  const activeTerminal = useBench((s) => s.activeTerminal);
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     void ensureBridge();
   }, []);
 
-  // move the active session's node into the pane, park the others
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    let cancelled = false;
-    detachAll(container, activeTerminal);
-    if (!activeTerminal) return;
-    void attach(activeTerminal).then((a) => {
-      if (cancelled || !containerRef.current) return;
-      if (a.host.parentElement !== containerRef.current) containerRef.current.appendChild(a.host);
-      a.fit.fit();
-      a.term.focus();
-      void ptyResize(activeTerminal, a.term.cols, a.term.rows).catch(() => {});
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTerminal, terminals.length]);
-
-  // the pane is resizable, and the program has to be told
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver(() => {
-      if (!activeTerminal) return;
-      const a = attached.get(activeTerminal);
-      if (!a || a.host.parentElement !== container) return;
-      a.fit.fit();
-      void ptyResize(activeTerminal, a.term.cols, a.term.rows).catch(() => {});
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [activeTerminal]);
-
-  // a closed tab's screen goes with it
   React.useEffect(() => {
     const live = new Set(terminals.map((x) => x.id));
     for (const [id, a] of attached) {
@@ -201,12 +165,61 @@ export function TerminalPane() {
       attached.delete(id);
     }
   }, [terminals]);
+}
+
+/**
+ * One pane's terminal surface: the session's detached node is moved into this
+ * container, so moving a tab to another pane re-hosts the same screen — nothing
+ * restarts, nothing is lost. `focused` gives it the keyboard.
+ */
+export function TerminalSlot({ id, focused }: { id: string | null; focused: boolean }) {
+  const t = useT();
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const count = useBench((s) => s.terminals.length);
+
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !id) return;
+    let cancelled = false;
+    void attach(id).then((a) => {
+      if (cancelled || !containerRef.current) return;
+      // park whatever this pane showed before
+      for (const child of [...containerRef.current.children]) if (child !== a.host) child.remove();
+      if (a.host.parentElement !== containerRef.current) containerRef.current.appendChild(a.host);
+      a.fit.fit();
+      void ptyResize(id, a.term.cols, a.term.rows).catch(() => {});
+    });
+    return () => {
+      cancelled = true;
+      release(id, container);
+    };
+  }, [id, count]);
+
+  React.useEffect(() => {
+    if (!focused || !id) return;
+    const a = attached.get(id);
+    if (a && a.host.parentElement === containerRef.current) a.term.focus();
+    else void attach(id).then((x) => x.term.focus());
+  }, [focused, id]);
+
+  // the pane is resizable, and the program has to be told
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !id) return;
+    const observer = new ResizeObserver(() => {
+      const a = attached.get(id);
+      if (!a || a.host.parentElement !== container || !container.clientWidth || !container.clientHeight) return;
+      a.fit.fit();
+      void ptyResize(id, a.term.cols, a.term.rows).catch(() => {});
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [id]);
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden p-1.5">
       <div ref={containerRef} className="h-full w-full" />
-      <LinkPreviewPopover />
-      {!activeTerminal && (
+      {!id && (
         <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[12px] text-text-3">
           {t("No terminal open — use + to start one in this project.")}
         </div>

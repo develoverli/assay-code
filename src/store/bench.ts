@@ -22,6 +22,7 @@ import { storeOrder, type TabKey } from "@/lib/tab-order";
 import { uid } from "@/lib/utils";
 import { tr } from "@/lib/i18n";
 import { useApp } from "@/store/app";
+import { visibleTerminals } from "@/store/panes";
 import { targetId, type PreviewTarget } from "@/features/bench/link-detect";
 
 /** A Claude session id (a UUID): letters, digits and dashes only, safe in any shell unquoted. */
@@ -57,7 +58,7 @@ export interface TermSession {
   used: boolean;
 }
 
-interface OpenFile {
+export interface OpenFile {
   path: string;
   name: string;
   /** The project it was opened from; tabs only show under their own project. */
@@ -87,7 +88,16 @@ export interface PinnedPreview {
 export type Focus = "terminal" | "file" | "preview" | "conflict";
 
 /** Which panel the right dock is showing (`dock` is null when folded away). */
-export type DockPanel = "files" | "search" | "git" | "deploy" | "ports" | "conflicts" | "sessions" | "findings";
+export type DockPanel =
+  | "files"
+  | "search"
+  | "git"
+  | "releases"
+  | "deploy"
+  | "ports"
+  | "conflicts"
+  | "sessions"
+  | "findings";
 
 /** The conflicted file open in the work area — one at a time, it is a task, not a document. */
 export interface ConflictTab {
@@ -206,6 +216,8 @@ interface BenchState {
   ) => Promise<void>;
   closeTerminal: (id: string) => Promise<void>;
   setActiveTerminal: (id: string | null) => void;
+  /** These terminals are on screen: their "Claude finished" dots are seen. Nothing else moves. */
+  seeTerminals: (ids: string[]) => void;
   markTerminalDead: (id: string) => void;
   /** Called on the first keystroke a session receives. */
   markTerminalUsed: (id: string) => void;
@@ -638,6 +650,13 @@ export const useBench = create<BenchState>((set, get) => ({
     }),
 
   attention: {},
+  seeTerminals: (ids) =>
+    set((s) => {
+      if (!ids.some((id) => s.attention[id])) return s;
+      const attention = { ...s.attention };
+      for (const id of ids) delete attention[id];
+      return { attention };
+    }),
   agentStopped: async ({ id, message }) => {
     const s = get();
     const term = s.terminals.find((x) => x.id === id);
@@ -647,8 +666,8 @@ export const useBench = create<BenchState>((set, get) => ({
       document.hasFocus() &&
       useUI.getState().view === "bench" &&
       s.projectId === term.projectId &&
-      s.focus === "terminal" &&
-      s.activeTerminal === id;
+      // in front of any pane counts, not only the active one: a split shows several at once
+      visibleTerminals(s.projectId).has(id);
     if (onScreen) return;
     set((x) => ({ attention: { ...x.attention, [id]: true } }));
     if (!(await agentNotificationsEnabled())) return;

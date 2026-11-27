@@ -3,11 +3,11 @@ import { RotateCw } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { PinnedPreview } from "@/store/bench";
-import { ImagePreview, PageFrame, PreviewActions, PreviewTitle } from "./LinkPreview";
+import { MediaPreview, PageFrame, PreviewActions, PreviewTitle } from "./LinkPreview";
 
 /**
  * A pinned link preview, full size: the page live at its real width, or the
- * image fitted to the surface. Every pinned preview of the project stays
+ * image, video or sound fitted to the surface. Every pinned preview of the project stays
  * mounted, like the other surfaces, so switching tabs does not reload a page.
  */
 function PinnedSurface({ preview }: { preview: PinnedPreview }) {
@@ -38,7 +38,7 @@ function PinnedSurface({ preview }: { preview: PinnedPreview }) {
         {target.kind === "url" ? (
           <PageFrame key={generation} url={target.url} scaled={false} />
         ) : (
-          <ImagePreview path={target.path} name={target.name} fill />
+          <MediaPreview kind={target.kind} path={target.path} name={target.name} fill />
         )}
       </div>
     </div>

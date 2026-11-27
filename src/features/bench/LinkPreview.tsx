@@ -1,8 +1,10 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, ExternalLink, FolderOpen, Globe, Pin } from "lucide-react";
-import { readFile } from "@tauri-apps/plugin-fs";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { Check, Copy, Eye, EyeOff, ExternalLink, FolderOpen, Globe, Pin, SquareArrowOutUpRight } from "lucide-react";
+import { readFile, stat } from "@tauri-apps/plugin-fs";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { groupsOf } from "@/lib/pane-layout";
+import { usePanes } from "@/store/panes";
 import { ASSAY_THEME, initMonaco } from "@/lib/monaco";
 import { isSecretFile, languageOf, openFile } from "@/lib/fs-tree";
 import { writeClipboard } from "@/lib/clipboard";
@@ -11,14 +13,18 @@ import { cn } from "@/lib/utils";
 import { useBench } from "@/store/bench";
 import { Spinner } from "@/components/ui/primitives";
 import { fileGlyph } from "./icons";
-import { sliceAround, type PreviewTarget } from "./link-detect";
+import { isMedia, sliceAround, type MediaKind, type PreviewTarget } from "./link-detect";
 import { closePreview, holdPreview, leaveLink, useLinkPreview } from "./link-preview-state";
 import { activateTarget } from "./terminal-links";
 
 /**
- * The preview of a terminal link: a slice of the file around the line, the
- * image, or the page itself. Shown as a popover while the pointer rests on the
- * link; images and pages can be pinned as a tab (`PreviewPane`).
+ * The preview of a terminal link, as a popover while the pointer rests on it.
+ * Media (a picture, a video, a sound) is shown at once: it is what you came to
+ * look at. Code and pages get a bar of actions instead — open here, open in the
+ * browser, show in the folder, copy — and **Preview** renders them only when
+ * asked, because loading a page (a dev server's whole app) every time the
+ * pointer crosses a link is heavy and gets in the way. Media and pages can also
+ * be pinned as a tab (`PreviewPane`).
  */
 
 /** Lines of code shown around the one the link points at. */
@@ -40,7 +46,26 @@ const MIME: Record<string, string> = {
   svg: "image/svg+xml",
   ico: "image/x-icon",
   bmp: "image/bmp",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  ogv: "video/ogg",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  opus: "audio/ogg",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  flac: "audio/flac",
 };
+
+/**
+ * The webview plays media from a blob read into memory, so a file past this is
+ * not loaded on a hover; the folder and the system player are one click away.
+ */
+const MAX_MEDIA_BYTES = 200 * 1024 * 1024;
 
 /** A Windows path back in its own separators: Explorer's `/select` does not take forward slashes. */
 const nativePath = (path: string): string => (/^[A-Za-z]:\//.test(path) ? path.replace(/\//g, "\\") : path);
@@ -189,6 +214,65 @@ export function ImagePreview({ path, name, fill = false }: { path: string; name:
   );
 }
 
+/** A video or a sound from disk, with the player's own controls. Nothing plays until asked. */
+function PlayablePreview({ kind, path, name, fill }: { kind: "video" | "audio"; path: string; name: string; fill: boolean }) {
+  const t = useT();
+  const [src, setSrc] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let url: string | null = null;
+    let cancelled = false;
+    setSrc(null);
+    setError(null);
+    void (async () => {
+      const info = await stat(path);
+      if (info.size > MAX_MEDIA_BYTES) {
+        throw new Error(t("Too large to play here ({size} MB). Show it in the folder to open it with your player.", {
+          size: Math.round(info.size / 1024 / 1024),
+        }));
+      }
+      const bytes = await readFile(path);
+      if (cancelled) return;
+      const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+      url = URL.createObjectURL(new Blob([bytes], { type: MIME[ext] ?? "application/octet-stream" }));
+      setSrc(url);
+    })().catch((e: unknown) => {
+      if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+    });
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [path, name, t]);
+
+  if (error) return <PreviewMessage text={error} />;
+  if (!src) return <PreviewMessage busy text={kind === "video" ? t("Reading the video…") : t("Reading the audio…")} />;
+  if (kind === "audio") {
+    return (
+      <div className={cn("flex items-center justify-center bg-surface-2 p-3", fill && "h-full")}>
+        <audio src={src} controls preload="metadata" className="w-[min(420px,100%)]" />
+      </div>
+    );
+  }
+  return (
+    <div className={cn("flex items-center justify-center bg-surface-2", fill ? "h-full p-4" : "p-2")}>
+      <video
+        src={src}
+        controls
+        preload="metadata"
+        className={cn("object-contain", fill ? "max-h-full max-w-full" : "max-h-[300px] max-w-[480px]")}
+      />
+    </div>
+  );
+}
+
+/** Whichever media the target is, at popover size or filling a pinned tab. */
+export function MediaPreview({ kind, path, name, fill = false }: { kind: MediaKind; path: string; name: string; fill?: boolean }) {
+  if (kind === "image") return <ImagePreview path={path} name={name} fill={fill} />;
+  return <PlayablePreview kind={kind} path={path} name={name} fill={fill} />;
+}
+
 /* ---------------------------------- page --------------------------------- */
 
 export function PageFrame({ url, scaled }: { url: string; scaled: boolean }) {
@@ -307,7 +391,7 @@ export function PreviewActions({ target, pinned = false }: { target: PreviewTarg
       )}
       {(pinned ? target.kind === "url" : true) && (
         <ActionButton
-          label={target.kind === "url" ? t("Open in browser") : target.kind === "image" ? t("Open as a tab") : t("Open in editor")}
+          label={target.kind === "url" ? t("Open in browser") : isMedia(target) ? t("Open as a tab") : t("Open in editor")}
           onClick={() => {
             closePreview();
             void activateTarget(target).catch(fail);
@@ -348,8 +432,108 @@ export function PreviewTitle({ target }: { target: PreviewTarget }) {
 
 export function PreviewBody({ target }: { target: PreviewTarget }) {
   if (target.kind === "code") return <CodePreview path={target.path} name={target.name} line={target.line} />;
-  if (target.kind === "image") return <ImagePreview path={target.path} name={target.name} />;
+  if (isMedia(target)) return <MediaPreview kind={target.kind} path={target.path} name={target.name} />;
   return <PageFrame url={target.url} scaled />;
+}
+
+/** A labelled button in the hover bar: words, not only an icon, since this is where you decide. */
+function BarButton({
+  label,
+  onClick,
+  pressed,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  pressed?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      className={cn(
+        "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+        "focus-visible:outline-2 focus-visible:outline-accent",
+        pressed ? "bg-accent-soft text-accent" : "text-text-2 hover:bg-surface-2 hover:text-text",
+      )}
+    >
+      {children}
+      {label}
+    </button>
+  );
+}
+
+/**
+ * What the popover offers for any link: open it here (the editor at the line, or
+ * a pinned tab for a page or media), Preview for code and pages, the browser for
+ * a URL, the folder for a file, and copy.
+ */
+function HoverBar({
+  target,
+  expanded,
+  onToggle,
+}: {
+  target: PreviewTarget;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const t = useT();
+  const setError = useBench((s) => s.setError);
+  const openPreview = useBench((s) => s.openPreview);
+  const [copied, setCopied] = React.useState(false);
+  const fail = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+  const text = target.kind === "url" ? target.url : target.kind === "code" && target.line ? `${target.path}:${target.line}` : target.path;
+
+  React.useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  const openHere = () => {
+    closePreview();
+    if (target.kind === "code") void activateTarget(target).catch(fail);
+    else openPreview(target);
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-0.5 px-1 py-1">
+      <BarButton label={t("Open here")} onClick={openHere}>
+        <SquareArrowOutUpRight className="h-3.5 w-3.5" />
+      </BarButton>
+      {!isMedia(target) && (
+        <BarButton label={expanded ? t("Hide preview") : t("Preview")} onClick={onToggle} pressed={expanded}>
+          {expanded ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        </BarButton>
+      )}
+      {target.kind === "url" ? (
+        <BarButton
+          label={t("Open in browser")}
+          onClick={() => {
+            closePreview();
+            void openUrl(target.url).catch(fail);
+          }}
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </BarButton>
+      ) : (
+        <BarButton label={t("Show in folder")} onClick={() => void revealItemInDir(nativePath(target.path)).catch(fail)}>
+          <FolderOpen className="h-3.5 w-3.5" />
+        </BarButton>
+      )}
+      <ActionButton
+        label={copied ? t("Copied") : target.kind === "url" ? t("Copy URL") : t("Copy path")}
+        onClick={() => void writeClipboard(text).then(() => setCopied(true), fail)}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+      </ActionButton>
+      <span role="status" aria-atomic="true" className="sr-only">
+        {copied ? t("Copied") : ""}
+      </span>
+    </div>
+  );
 }
 
 /* --------------------------------- popover ------------------------------- */
@@ -370,15 +554,24 @@ export function LinkPreviewPopover() {
   const target = useLinkPreview((s) => s.target);
   const anchor = useLinkPreview((s) => s.anchor);
   const sessionId = useLinkPreview((s) => s.sessionId);
-  const activeTerminal = useBench((s) => s.activeTerminal);
-  const focus = useBench((s) => s.focus);
+  const projectId = useBench((s) => s.projectId);
+  // the terminal that printed the link is on screen while it is the front tab of some pane
+  const onScreen = usePanes((s) => {
+    const layout = s.layouts[projectId ?? ""];
+    return !!sessionId && !!layout && groupsOf(layout).some((g) => g.front === `t:${sessionId}`);
+  });
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = React.useState<{ left: number; top: number } | null>(null);
+  /** Code and pages render only once asked for; a new link starts folded again. */
+  const [expanded, setExpanded] = React.useState(false);
+  const id = target ? (target.kind === "url" ? target.url : target.path) : null;
 
-  // another tab in front means the link it was about is gone from view
+  React.useEffect(() => setExpanded(false), [id]);
+
+  // another tab in front of that pane means the link it was about is gone from view
   React.useEffect(() => {
-    if (sessionId && (focus !== "terminal" || activeTerminal !== sessionId)) closePreview();
-  }, [sessionId, focus, activeTerminal]);
+    if (sessionId && !onScreen) closePreview();
+  }, [sessionId, onScreen]);
 
   React.useEffect(() => {
     if (!target) return;
@@ -401,9 +594,11 @@ export function LinkPreviewPopover() {
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [anchor, target]);
+  }, [anchor, target, expanded]);
 
   if (!target || !anchor) return null;
+  const media = isMedia(target);
+  const showBody = media || expanded;
 
   return createPortal(
     <div
@@ -420,19 +615,19 @@ export function LinkPreviewPopover() {
       style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}
       className={cn(
         "fixed z-50 flex max-w-[min(680px,calc(100vw-16px))] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-2xl",
-        target.kind === "code" && "w-[560px]",
+        target.kind === "code" && expanded ? "w-[560px]" : "w-max",
         pos && "animate-in",
       )}
     >
-      <div className="flex items-center gap-2 border-b border-border-soft py-1 pl-3 pr-1">
-        <div className="min-w-0 flex-1">
-          <PreviewTitle target={target} />
+      <div className="max-w-full border-b border-border-soft px-3 pt-2 pb-0.5">
+        <PreviewTitle target={target} />
+      </div>
+      <HoverBar target={target} expanded={expanded} onToggle={() => setExpanded((v) => !v)} />
+      {showBody && (
+        <div className="min-h-0 border-t border-border-soft">
+          <PreviewBody key={`${target.kind}:${id ?? ""}`} target={target} />
         </div>
-        <PreviewActions target={target} />
-      </div>
-      <div className="min-h-0">
-        <PreviewBody key={`${target.kind}:${target.kind === "url" ? target.url : target.path}`} target={target} />
-      </div>
+      )}
       <p className="border-t border-border-soft px-3 py-1 text-[10px] text-text-3">
         {t("Ctrl+click the link to open it · Esc closes")}
       </p>

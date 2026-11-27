@@ -8,6 +8,7 @@ import {
   fileTarget,
   fileUrlToPath,
   findAll,
+  isMedia,
   resolvePath,
   spaceSplits,
   splitLocation,
@@ -51,7 +52,8 @@ export async function activateTarget(target: PreviewTarget): Promise<void> {
     await openUrl(target.url);
     return;
   }
-  if (target.kind === "image") {
+  // a picture, a video or a sound opens as a tab that shows it, not as text in the editor
+  if (isMedia(target)) {
     useBench.getState().openPreview(target);
     return;
   }

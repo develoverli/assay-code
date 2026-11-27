@@ -10,6 +10,7 @@ import { ViewHeader } from "@/components/layout/ViewHeader";
 import { cn } from "@/lib/utils";
 import { useAIInventory } from "@/features/shared/AIPicker";
 import { AITasksCard } from "./AITasksCard";
+import { CommitPromptsCard } from "./CommitPromptsCard";
 import { ToolchainCard, type ToolchainStatuses } from "./ToolchainCard";
 import { SonarSettings } from "./SonarSettings";
 import { LocalModels } from "./LocalModels";
@@ -301,6 +302,7 @@ export function SettingsView() {
       body: (
         <>
           <AITasksCard inventory={inventory} loading={detecting} onRefresh={refreshInventory} />
+          <CommitPromptsCard />
           <LocalModels onChanged={() => void refreshInventory()} />
           <StrixCard status={status} models={inventory?.opencodeModels ?? []} />
         </>

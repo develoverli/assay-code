@@ -5,6 +5,7 @@ import { startScheduler } from "@/lib/schedule";
 import { onAgentStatus, onAgentStop } from "@/lib/agent-signals";
 import { useClaudeUsage } from "@/store/claude-usage";
 import { useBench } from "@/store/bench";
+import { visibleTerminals } from "@/store/panes";
 import { useUI } from "@/store/ui";
 import { usePorts } from "@/store/ports";
 import { useUpdater } from "@/store/updater";
@@ -47,11 +48,10 @@ export default function App() {
     void useClaudeUsage.getState().load();
     const offStatus = onAgentStatus((e) => useClaudeUsage.getState().apply(e));
     const off = onAgentStop((e) => void useBench.getState().agentStopped(e));
-    // refocusing the window with that terminal in front clears its attention dot
+    // refocusing the window clears the attention dot of every terminal in front of a pane
     const onFocus = () => {
       const b = useBench.getState();
-      if (useUI.getState().view === "bench" && b.focus === "terminal" && b.activeTerminal && b.attention[b.activeTerminal])
-        b.setActiveTerminal(b.activeTerminal);
+      if (useUI.getState().view === "bench") b.seeTerminals([...visibleTerminals(b.projectId)]);
     };
     window.addEventListener("focus", onFocus);
     return () => {

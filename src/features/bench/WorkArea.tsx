@@ -1,356 +1,235 @@
-import * as Dropdown from "@radix-ui/react-dropdown-menu";
-import { GitMerge, Globe, Image as ImageIcon, Lock, Pencil, Plus, Save, X } from "lucide-react";
 import * as React from "react";
-import { availableLaunchers, droppedPathText, LAUNCHERS, resolveShell, type TermKind } from "@/lib/bench-term";
-import { filesFor, previewsFor, terminalsFor, useBench, type Focus } from "@/store/bench";
+import { droppedPathText, resolveShell, type TermKind } from "@/lib/bench-term";
+import { filesFor, previewsFor, terminalsFor, useBench } from "@/store/bench";
+import { usePanes } from "@/store/panes";
 import { ConfirmDialog, Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/primitives";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
-import { ConflictView } from "./ConflictView";
-import { ScriptsBar } from "./ScriptsBar";
-import { EditorPane } from "./EditorPane";
-import { TerminalPane } from "./TerminalPane";
-import { PreviewPane } from "./PreviewPane";
-import { relPath } from "@/lib/git";
-import { useFileDrop } from "@/lib/file-drop";
+import { useFileDrop, type DropTarget } from "@/lib/file-drop";
 import { isDirectory } from "@/lib/fs-tree";
 import { ptyWrite } from "@/lib/pty";
-import { fileGlyph, launcherGlyph, statusGlyph } from "./icons";
-import { fileKey, moveTab, nudgeTab, orderTabs, previewKey, terminalKey, type TabKey } from "@/lib/tab-order";
+import {
+  activeGroup,
+  focusGroup,
+  focusTab,
+  groupById,
+  groupOfTab,
+  groupsOf,
+  moveTab,
+  neighbourGroup,
+  nudgeInGroup,
+  reconcile,
+  reorderTab,
+  setSizes,
+  splitFits,
+  type PaneLayout,
+  type Rect,
+} from "@/lib/pane-layout";
+import { conflictKey, fileKey, orderTabs, previewKey, terminalKey, type TabKey } from "@/lib/tab-order";
+import { LinkPreviewPopover } from "./LinkPreview";
+import { PaneCtx, PaneGroupView, TabMenu, type PaneContext } from "./PaneGroup";
+import { PaneTree } from "./PaneTree";
+import { usePaneDrag, type DragTarget } from "./pane-drag";
+import { useTerminalLifecycle } from "./TerminalPane";
+import { useEditorLifecycle } from "./EditorPane";
 
 /**
- * One tab strip (terminals and open files together) over one surface. Both
- * surfaces stay mounted and hidden: an unmounted xterm loses its screen and an
- * unmounted Monaco its cursor.
+ * The work area: terminals, open files, pinned previews and the conflict being
+ * resolved, laid out in split panes (`lib/pane-layout`), one layout per project.
+ *
+ * The store keeps saying which tab is "in front" (`focus` + `activeTerminal` /
+ * `activeFile` / `activePreview`), as everything else in the app reads it; here
+ * that means the front tab of the **active** pane. The layout holds the fronts of
+ * the others. The two are kept in step by one effect: a move in the layout (a
+ * drag, a close, a click on another pane) wins and is written to the store; a
+ * change in the store alone (a file opened from the tree, a new terminal) is
+ * brought into the layout, landing in the active pane.
  */
-
-function TabShell({
-  active,
-  title,
-  onSelect,
-  onClose,
-  closeLabel,
-  closeTitle,
-  children,
-  drag,
-  editing,
-  onRename,
-  onMenu,
-}: {
-  active: boolean;
-  title: string;
-  onSelect: () => void;
-  onClose: () => void;
-  closeLabel: string;
-  closeTitle: string;
-  children: React.ReactNode;
-  /** Wiring from `useTabDrag`; the conflict tab has none, it is not movable. */
-  drag?: TabDragProps;
-  /** Replaces the label while the tab is being renamed. */
-  editing?: React.ReactNode;
-  /** Terminals only: double-click renames in place. */
-  onRename?: () => void;
-  /** Terminals only: right-click opens the tab's menu at the pointer. */
-  onMenu?: (x: number, y: number) => void;
-}) {
-  return (
-    <div
-      data-tab-key={drag?.tabKey}
-      onPointerDown={drag?.onPointerDown}
-      onContextMenu={
-        onMenu
-          ? (e) => {
-              e.preventDefault();
-              onMenu(e.clientX, e.clientY);
-            }
-          : undefined
-      }
-      className={cn(
-        "flex h-7 shrink-0 items-center gap-1.5 rounded-full border pl-2.5 pr-1 text-[11px] transition-colors",
-        active ? "border-accent/40 bg-accent-soft text-accent" : "border-border text-text-2 hover:bg-surface-2",
-        drag?.state === "source" && "opacity-50",
-        drag?.state === "target" && "ring-1 ring-accent",
-      )}
-    >
-      {editing ?? (
-        <button
-          type="button"
-          onClick={onSelect}
-          onDoubleClick={onRename}
-          className="flex cursor-pointer items-center gap-1.5"
-          title={title}
-        >
-          {children}
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={closeLabel}
-        title={closeTitle}
-        className="cursor-pointer rounded-full p-1 text-text-3 transition-colors hover:bg-surface hover:text-danger focus-visible:outline-2 focus-visible:outline-accent"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
-  );
-}
-
-interface TabDragProps {
-  tabKey: TabKey;
-  state: "source" | "target" | null;
-  onPointerDown: (e: React.PointerEvent) => void;
-}
-
-/** How far the pointer travels before a press on a tab becomes a drag, not a click. */
-const DRAG_THRESHOLD = 5;
-
-/**
- * Tab reordering on pointer events, not HTML5 drag and drop: Tauri takes drops
- * at the OS level, which on Windows silences the webview's `dragover`/`drop`.
- * The target is found by `data-tab-key`; the move happens on release.
- */
-function useTabDrag(onMove: (from: TabKey, to: TabKey) => void) {
-  const [drag, setDrag] = React.useState<{ from: TabKey; over: TabKey | null } | null>(null);
-  const press = React.useRef<{ key: TabKey; x: number; y: number; moving: boolean } | null>(null);
-  const move = React.useRef(onMove);
-  React.useEffect(() => {
-    move.current = onMove;
-  });
-
-  React.useEffect(() => {
-    const keyAt = (x: number, y: number): TabKey | null =>
-      (document.elementFromPoint(x, y)?.closest("[data-tab-key]")?.getAttribute("data-tab-key") as TabKey | null) ??
-      null;
-    const onMovePointer = (e: PointerEvent) => {
-      const p = press.current;
-      if (!p) return;
-      if (!p.moving && Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_THRESHOLD) return;
-      p.moving = true;
-      const over = keyAt(e.clientX, e.clientY);
-      setDrag((d) => (d && d.over === over ? d : { from: p.key, over }));
-    };
-    const onUp = (e: PointerEvent) => {
-      const p = press.current;
-      press.current = null;
-      if (!p?.moving) return;
-      const over = keyAt(e.clientX, e.clientY);
-      if (over && over !== p.key) move.current(p.key, over);
-      setDrag(null);
-    };
-    window.addEventListener("pointermove", onMovePointer);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMovePointer);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-    };
-  }, []);
-
-  return (key: TabKey): TabDragProps => ({
-    tabKey: key,
-    state: drag?.from === key ? "source" : drag && drag.over === key ? "target" : null,
-    onPointerDown: (e) => {
-      if (e.button !== 0) return;
-      press.current = { key, x: e.clientX, y: e.clientY, moving: false };
-    },
-  });
-}
-
-/** The label turned into a field: Enter or leaving keeps it, Escape drops it, empty restores the original. */
-function RenameField({ initial, onDone }: { initial: string; onDone: (name: string | null) => void }) {
-  const t = useT();
-  const [value, setValue] = React.useState(initial);
-  const done = React.useRef(false);
-  const finish = (name: string | null) => {
-    if (done.current) return;
-    done.current = true;
-    onDone(name);
-  };
-  return (
-    <input
-      autoFocus
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onFocus={(e) => e.target.select()}
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") finish(value);
-        else if (e.key === "Escape") finish(null);
-      }}
-      onBlur={() => finish(value)}
-      aria-label={t("Tab name")}
-      placeholder={t("Empty restores the original name")}
-      className="w-[140px] bg-transparent text-[11px] text-text outline-none placeholder:text-text-3"
-    />
-  );
-}
-
-/** Right-click menu on a terminal tab. */
-function TabMenu({
-  at,
-  onRename,
-  onClose,
-}: {
-  at: { x: number; y: number } | null;
-  onRename: () => void;
-  onClose: () => void;
-}) {
-  const t = useT();
-  if (!at) return null;
-  return (
-    <Dropdown.Root open onOpenChange={(o) => !o && onClose()}>
-      <Dropdown.Trigger asChild>
-        <span aria-hidden style={{ position: "fixed", left: at.x, top: at.y, width: 0, height: 0 }} />
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content
-          align="start"
-          sideOffset={2}
-          // the field takes focus next; giving it back to the tab would blur it at once
-          onCloseAutoFocus={(e) => e.preventDefault()}
-          className="z-50 min-w-[160px] rounded-lg border border-border bg-surface p-1 shadow-2xl animate-in"
-        >
-          <Dropdown.Item
-            onSelect={onRename}
-            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-text-2 outline-none transition-colors data-[highlighted]:bg-surface-2 data-[highlighted]:text-text"
-          >
-            <Pencil className="h-3.5 w-3.5" /> {t("Rename")}
-          </Dropdown.Item>
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
-  );
-}
-
-function NewTerminalMenu({ onPick }: { onPick: (kind: TermKind) => void }) {
-  const t = useT();
-  const [ready, setReady] = React.useState<Record<string, boolean>>({});
-  React.useEffect(() => {
-    void availableLaunchers().then(setReady);
-  }, []);
-  return (
-    <Dropdown.Root>
-      <Dropdown.Trigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full",
-            "bg-surface-2 text-text-2 transition-colors hover:bg-accent-soft hover:text-accent",
-            "focus-visible:outline-2 focus-visible:outline-accent",
-            "data-[state=open]:bg-accent-soft data-[state=open]:text-accent",
-          )}
-          title={t("New terminal")}
-          aria-label={t("New terminal")}
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal>
-        <Dropdown.Content
-          align="start"
-          sideOffset={6}
-          className="z-50 min-w-[200px] rounded-lg border border-border bg-surface p-1 shadow-2xl animate-in"
-        >
-          {LAUNCHERS.map((l) => {
-            const available = ready[l.kind] !== false;
-            const { Icon, tone } = launcherGlyph(l.kind);
-            return (
-              <Dropdown.Item
-                key={l.kind}
-                disabled={!available}
-                onSelect={() => onPick(l.kind)}
-                className={cn(
-                  "flex items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] outline-none transition-colors",
-                  available
-                    ? "cursor-pointer text-text-2 data-[highlighted]:bg-surface-2 data-[highlighted]:text-text"
-                    : "cursor-not-allowed text-text-3 opacity-50",
-                )}
-              >
-                <Icon className={cn("h-3.5 w-3.5 shrink-0", available ? tone : "text-text-3")} />
-                <span className="flex-1">{t(l.label)}</span>
-                {!available && <span className="text-[10px]">{t("not installed")}</span>}
-              </Dropdown.Item>
-            );
-          })}
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
-  );
-}
 
 /** What the user asked to close, while we ask whether they meant it. */
 type PendingClose = { kind: "file"; path: string } | { kind: "terminal"; id: string };
 
+/** The pane rectangles on screen, for the keyboard's neighbour and the split-size checks. */
+function paneRects(): Record<string, Rect> {
+  const out: Record<string, Rect> = {};
+  for (const el of document.querySelectorAll<HTMLElement>("[data-pane-group]")) {
+    const id = el.getAttribute("data-pane-group");
+    if (!id) continue;
+    const r = el.getBoundingClientRect();
+    out[id] = { left: r.left, top: r.top, width: r.width, height: r.height };
+  }
+  return out;
+}
+
 export function WorkArea({ cwd }: { cwd: string }) {
   const t = useT();
-  // the strip shows one project at a time; the rest stay open and keep running
+  useTerminalLifecycle();
+  useEditorLifecycle();
+
+  // the panes show one project at a time; the rest stay open and keep running
   const projectId = useBench((s) => s.projectId);
   const allTerminals = useBench((s) => s.terminals);
   const allFiles = useBench((s) => s.files);
+  const allPreviews = useBench((s) => s.previews);
   const terminals = React.useMemo(() => terminalsFor(allTerminals, projectId), [allTerminals, projectId]);
   const files = React.useMemo(() => filesFor(allFiles, projectId), [allFiles, projectId]);
-  const allPreviews = useBench((s) => s.previews);
   const previews = React.useMemo(() => previewsFor(allPreviews, projectId), [allPreviews, projectId]);
-  const activePreview = useBench((s) => s.activePreview);
-  const setActivePreview = useBench((s) => s.setActivePreview);
-  const closePreview = useBench((s) => s.closePreview);
-  const activeTerminal = useBench((s) => s.activeTerminal);
-  const setActiveTerminal = useBench((s) => s.setActiveTerminal);
-  const closeTerminal = useBench((s) => s.closeTerminal);
-  const newTerminal = useBench((s) => s.newTerminal);
-  const activeFile = useBench((s) => s.activeFile);
-  const setActiveFile = useBench((s) => s.setActiveFile);
-  const closeFile = useBench((s) => s.closeFile);
-  const saveFileAt = useBench((s) => s.saveFileAt);
-  const focus: Focus = useBench((s) => s.focus);
-  const gitStatus = useBench((s) => s.gitStatus);
-  const openPath = useBench((s) => s.openPath);
   const conflictTab = useBench((s) => s.conflict);
-  const closeConflict = useBench((s) => s.closeConflict);
   const conflict = conflictTab?.projectId === projectId ? conflictTab : null;
-  const tabOrder = useBench((s) => s.tabOrder);
-  const arrangeTabs = useBench((s) => s.arrangeTabs);
-  const renameTerminal = useBench((s) => s.renameTerminal);
+  const focus = useBench((s) => s.focus);
+  const activeTerminal = useBench((s) => s.activeTerminal);
+  const activeFile = useBench((s) => s.activeFile);
+  const activePreview = useBench((s) => s.activePreview);
+  const gitStatus = useBench((s) => s.gitStatus);
   const attention = useBench((s) => s.attention);
-  const [renaming, setRenaming] = React.useState<string | null>(null);
-  const [tabMenu, setTabMenu] = React.useState<{ id: string; x: number; y: number } | null>(null);
+  const tabOrder = useBench((s) => s.tabOrder);
+  const closeTerminal = useBench((s) => s.closeTerminal);
+  const closeFile = useBench((s) => s.closeFile);
+  const closePreview = useBench((s) => s.closePreview);
+  const closeConflict = useBench((s) => s.closeConflict);
+  const saveFileAt = useBench((s) => s.saveFileAt);
+  const newTerminal = useBench((s) => s.newTerminal);
+  const openPath = useBench((s) => s.openPath);
 
-  // the strip in the user's order; a tab never moved sits at the end
-  const orderedKeys = React.useMemo(
+  const paneKey = projectId ?? "";
+  const loaded = usePanes((s) => !!s.loaded[paneKey]);
+  const stored = usePanes((s) => s.layouts[paneKey]);
+  const loadPanes = usePanes((s) => s.load);
+  const updatePanes = usePanes((s) => s.update);
+  const [renaming, setRenaming] = React.useState<string | null>(null);
+  const [tabMenu, setTabMenu] = React.useState<{ key: TabKey; group: string; x: number; y: number } | null>(null);
+  const [pending, setPending] = React.useState<PendingClose | null>(null);
+
+  React.useEffect(() => {
+    void loadPanes(paneKey);
+  }, [paneKey, loadPanes]);
+
+  const update = React.useCallback((fn: (l: PaneLayout) => PaneLayout) => updatePanes(paneKey, fn), [paneKey, updatePanes]);
+
+  // every tab this project has, in the order the strip had before panes existed
+  const existing = React.useMemo(
     () =>
       orderTabs(
         [
           ...terminals.map((x) => terminalKey(x.id)),
           ...files.map((f) => fileKey(f.path)),
           ...previews.map((p) => previewKey(p.id)),
+          ...(conflict ? [conflictKey(conflict.path)] : []),
         ],
         tabOrder,
       ),
-    [terminals, files, previews, tabOrder],
+    [terminals, files, previews, conflict, tabOrder],
   );
-  const dragProps = useTabDrag((from, to) => arrangeTabs(moveTab(orderedKeys, from, to)));
 
-  const file = files.find((f) => f.path === activeFile) ?? null;
-  const dirty = !!file && file.content !== file.saved;
-  const showingConflict = focus === "conflict" && !!conflict;
-  const showingFile = focus === "file" && !!file;
-  const preview = previews.find((p) => p.id === activePreview) ?? null;
-  const showingPreview = focus === "preview" && !!preview;
+  /** The tab the store has in front, when it is one of this project's. */
+  const storeKey = React.useMemo((): TabKey | null => {
+    let key: TabKey | null = null;
+    if (focus === "terminal" && activeTerminal) key = terminalKey(activeTerminal);
+    else if (focus === "file" && activeFile) key = fileKey(activeFile);
+    else if (focus === "preview" && activePreview) key = previewKey(activePreview);
+    else if (focus === "conflict" && conflict) key = conflictKey(conflict.path);
+    return key && existing.includes(key) ? key : null;
+  }, [focus, activeTerminal, activeFile, activePreview, conflict, existing]);
 
-  // a desktop drop types the paths into the terminal, or opens them in the editor
-  const dropOnTerminal = async (paths: string[]): Promise<void> => {
-    if (!activeTerminal) return;
-    const session = terminals.find((x) => x.id === activeTerminal);
+  /** Put a tab in front in the store, the way a click on it always has. */
+  const activateInStore = React.useCallback((key: TabKey) => {
+    const s = useBench.getState();
+    const id = key.slice(2);
+    if (key.startsWith("t:")) s.setActiveTerminal(id);
+    else if (key.startsWith("f:")) s.setActiveFile(id);
+    else if (key.startsWith("p:")) s.setActivePreview(id);
+    else useBench.setState({ focus: "conflict" });
+  }, []);
+
+  // closed tabs leave their pane, new ones join the active pane; nothing before the stored layout is read
+  React.useEffect(() => {
+    if (loaded) update((l) => reconcile(l, existing));
+  }, [loaded, existing, update]);
+
+  const layout = stored;
+  const frontNow = layout && loaded ? activeGroup(layout).front : null;
+  const seen = React.useRef<{ key: TabKey | null; front: TabKey | null; project: string } | null>(null);
+
+  // the store and the active pane agree on what is in front; see the comment at the top
+  React.useEffect(() => {
+    if (!layout || !loaded) return;
+    const prev = seen.current?.project === paneKey ? seen.current : null;
+    seen.current = { key: storeKey, front: frontNow, project: paneKey };
+    const frontMoved = !prev || prev.front !== frontNow;
+    const keyMoved = !prev || prev.key !== storeKey;
+    if (frontMoved && frontNow && frontNow !== storeKey && existing.includes(frontNow)) {
+      activateInStore(frontNow);
+      return;
+    }
+    if (keyMoved && storeKey && storeKey !== frontNow) update((l) => focusTab(l, storeKey));
+  }, [layout, loaded, storeKey, frontNow, paneKey, existing, activateInStore, update]);
+
+  /* --------------------------------- actions --------------------------------- */
+
+  const activateKey = React.useCallback(
+    (key: TabKey) => {
+      update((l) => focusTab(l, key));
+      activateInStore(key);
+    },
+    [update, activateInStore],
+  );
+
+  const requestClose = (key: TabKey) => {
+    const id = key.slice(2);
+    if (key.startsWith("t:")) {
+      const target = terminals.find((x) => x.id === id);
+      // a live session someone typed into is worth a question; nothing else is
+      if (target?.alive && target.used) setPending({ kind: "terminal", id });
+      else void closeTerminal(id);
+    } else if (key.startsWith("f:")) {
+      const target = files.find((f) => f.path === id);
+      if (target && target.content !== target.saved) setPending({ kind: "file", path: id });
+      else closeFile(id);
+    } else if (key.startsWith("p:")) closePreview(id);
+    else closeConflict();
+  };
+
+  /** Why `key` cannot be split off its pane on that edge right now, or null. */
+  const splitBlocked = (key: TabKey, edge: "right" | "bottom"): string | null => {
+    if (!layout) return t("Not ready yet.");
+    const g = groupOfTab(layout, key);
+    if (!g) return t("Not ready yet.");
+    if (g.tabs.length < 2) return t("This is the only tab in its panel.");
+    const r = paneRects()[g.id];
+    if (r && !splitFits(r.width, r.height, edge)) return t("Not enough room to split this panel.");
+    return null;
+  };
+
+  const split = (key: TabKey, edge: "right" | "bottom") => {
+    if (!layout || splitBlocked(key, edge)) return;
+    const g = groupOfTab(layout, key);
+    if (g) update((l) => moveTab(l, key, g.id, edge));
+  };
+
+  const onDrop = (from: TabKey, target: DragTarget) => {
+    if (target.kind === "tab") {
+      const same = layout && groupOfTab(layout, from)?.id === target.group;
+      update((l) => (same ? reorderTab(l, from, target.key) : moveTab(l, from, target.group, "center", target.key)));
+    } else if (target.kind === "strip") update((l) => moveTab(l, from, target.group, "center"));
+    else update((l) => moveTab(l, from, target.group, target.edge));
+  };
+
+  const drag = usePaneDrag(layout ?? { root: { kind: "group", id: "", tabs: [], front: null }, active: "" }, onDrop);
+
+  // a desktop drop types the paths into that pane's terminal, or opens them in that pane
+  const dropOnTerminal = async (groupId: string | null, paths: string[]): Promise<void> => {
+    const g = layout && groupId ? groupById(layout, groupId) : null;
+    const id = g?.front?.startsWith("t:") ? g.front.slice(2) : activeTerminal;
+    if (!id) return;
+    const session = terminals.find((x) => x.id === id);
     const shell = await resolveShell();
     const text = droppedPathText(shell, session?.cwd ?? cwd, paths);
     // typed, never run: no newline goes with it
-    if (text) await ptyWrite(activeTerminal, text);
+    if (text) await ptyWrite(id, text);
   };
 
-  const dropOnEditor = async (paths: string[]): Promise<void> => {
+  const dropOnEditor = async (groupId: string | null, paths: string[]): Promise<void> => {
+    if (groupId) update((l) => focusGroup(l, groupId));
     for (const path of paths) {
       // a folder is not an error here, it is simply not something to open
       if (await isDirectory(path)) continue;
@@ -359,282 +238,170 @@ export function WorkArea({ cwd }: { cwd: string }) {
     }
   };
 
-  const dropZone = useFileDrop((zone, paths) => {
-    void (zone === "terminal" ? dropOnTerminal(paths) : dropOnEditor(paths));
+  const dropTarget: DropTarget | null = useFileDrop((target, paths) => {
+    void (target.zone === "terminal" ? dropOnTerminal(target.group, paths) : dropOnEditor(target.group, paths));
   });
 
-  const [pending, setPending] = React.useState<PendingClose | null>(null);
-  const pendingFile = pending?.kind === "file" ? files.find((f) => f.path === pending.path) : undefined;
-  const pendingTerm = pending?.kind === "terminal" ? terminals.find((x) => x.id === pending.id) : undefined;
-
-  /** Unsaved work and live sessions are worth a question; nothing else is. */
-  const requestCloseFile = (path: string) => {
-    const target = files.find((f) => f.path === path);
-    if (target && target.content !== target.saved) setPending({ kind: "file", path });
-    else closeFile(path);
-  };
-
-  const requestCloseTerminal = (id: string) => {
-    const target = terminals.find((x) => x.id === id);
-    if (target?.alive && target.used) setPending({ kind: "terminal", id });
-    else void closeTerminal(id);
-  };
+  /* -------------------------------- keyboard --------------------------------- */
 
   // read through a ref so the key listener is registered once
-  const shortcuts = React.useRef<{ closeActive: () => void; focusTerminal: () => void; nudge: (step: -1 | 1) => void }>({
-    closeActive: () => {},
+  const keys = React.useRef({
+    close: () => {},
     focusTerminal: () => {},
-    nudge: () => {},
+    nudge: (_step: -1 | 1) => {},
+    split: () => {},
+    move: (_dir: "left" | "right" | "up" | "down") => {},
   });
   // written after the commit, before the listener below can fire: render is pure
   React.useEffect(() => {
-    shortcuts.current = {
-      closeActive: () => {
-        if (showingFile && file) requestCloseFile(file.path);
-        else if (showingPreview && preview) closePreview(preview.id);
-        else if (activeTerminal) requestCloseTerminal(activeTerminal);
+    const front = layout ? activeGroup(layout).front : null;
+    keys.current = {
+      close: () => {
+        if (front) requestClose(front);
       },
       focusTerminal: () => {
-        if (activeTerminal) setActiveTerminal(activeTerminal);
+        const fronts = layout ? groupsOf(layout).map((g) => g.front) : [];
+        const target = front?.startsWith("t:") ? front : (fronts.find((k) => k?.startsWith("t:")) ?? null);
+        if (target) activateKey(target);
+        else if (activeTerminal) activateKey(terminalKey(activeTerminal));
       },
       nudge: (step) => {
-        const key =
-          showingFile && file
-            ? fileKey(file.path)
-            : showingPreview && preview
-              ? previewKey(preview.id)
-              : activeTerminal
-                ? terminalKey(activeTerminal)
-                : null;
-        if (key) arrangeTabs(nudgeTab(orderedKeys, key, step));
+        if (front) update((l) => nudgeInGroup(l, front, step));
+      },
+      split: () => {
+        if (front) split(front, "right");
+      },
+      move: (dir) => {
+        if (!layout) return;
+        const next = neighbourGroup(paneRects(), layout.active, dir);
+        const g = next ? groupById(layout, next) : null;
+        if (!g) return;
+        update((l) => focusGroup(l, g.id));
+        if (g.front) activateInStore(g.front);
       },
     };
   });
 
-  // Ctrl+W closes the front tab; Ctrl+` focuses the shell; Ctrl+Shift+PageUp/Down
-  // moves the front tab (not the arrows: editor and shells select words with them)
+  // Ctrl+W closes the front tab; Ctrl+` focuses a shell; Ctrl+Shift+PageUp/Down moves the front
+  // tab inside its pane (not the arrows: editor and shells select words with them); Ctrl+\ splits
+  // it to the right; Ctrl+Alt+arrows walk between panes
   React.useEffect(() => {
+    const arrows: Record<string, "left" | "right" | "up" | "down"> = {
+      ArrowLeft: "left",
+      ArrowRight: "right",
+      ArrowUp: "up",
+      ArrowDown: "down",
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.altKey) {
+        const dir = arrows[e.key];
+        if (dir && !e.shiftKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          keys.current.move(dir);
+        }
+        return;
+      }
       if (e.shiftKey && (e.key === "PageUp" || e.key === "PageDown")) {
         e.preventDefault();
         e.stopPropagation();
-        shortcuts.current.nudge(e.key === "PageUp" ? -1 : 1);
+        keys.current.nudge(e.key === "PageUp" ? -1 : 1);
         return;
       }
-      if (e.key === "w" || e.key === "W") {
+      // by the character, or by the physical key: on layouts where `\` needs AltGr it never arrives as one
+      if ((e.key === "\\" || e.code === "Backslash") && !e.shiftKey) {
         e.preventDefault();
-        shortcuts.current.closeActive();
+        e.stopPropagation();
+        keys.current.split();
+      } else if (e.key === "w" || e.key === "W") {
+        e.preventDefault();
+        keys.current.close();
       } else if (e.key === "`") {
         e.preventDefault();
-        shortcuts.current.focusTerminal();
+        keys.current.focusTerminal();
       }
     };
-    // capture: the editor would otherwise take PageUp/PageDown before we see them
+    // capture: the editor and xterm would otherwise take these before we see them
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  /* --------------------------------- render ---------------------------------- */
+
+  const pendingFile = pending?.kind === "file" ? files.find((f) => f.path === pending.path) : undefined;
+  const pendingTerm = pending?.kind === "terminal" ? terminals.find((x) => x.id === pending.id) : undefined;
+  const groups = layout ? groupsOf(layout) : [];
+
+  const ctx: PaneContext | null = layout
+    ? {
+        cwd,
+        projectId,
+        layout,
+        multi: groups.length > 1,
+        terminals,
+        files,
+        previews,
+        conflict,
+        gitStatus,
+        attention,
+        renaming,
+        setRenaming,
+        activateKey,
+        focusGroup: (id) => {
+          update((l) => focusGroup(l, id));
+          const g = groupById(layout, id);
+          if (g?.front) activateInStore(g.front);
+        },
+        requestClose,
+        openMenu: (key, group, x, y) => setTabMenu({ key, group, x, y }),
+        newTerminalIn: (groupId, kind: TermKind) => {
+          update((l) => focusGroup(l, groupId));
+          void newTerminal(kind, cwd);
+        },
+        runScriptIn: (groupId, label, command) => {
+          update((l) => focusGroup(l, groupId));
+          void newTerminal("shell", cwd, { label, command });
+        },
+        drag,
+        dropTarget,
+      }
+    : null;
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg">
-      <div
-        data-drop-zone="editor"
-        className={cn(
-          "flex h-9 shrink-0 items-center gap-1.5 border-b border-border bg-surface px-2",
-          dropZone === "editor" && !showingFile && "ring-1 ring-inset ring-accent",
-        )}
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
-          {orderedKeys.map((key) => {
-            if (key.startsWith("t:")) {
-              const term = terminals.find((x) => terminalKey(x.id) === key);
-              if (!term) return null;
-              const { Icon, tone } = launcherGlyph(term.kind);
-              const active = !showingFile && !showingConflict && !showingPreview && term.id === activeTerminal;
-              return (
-                <TabShell
-                  key={key}
-                  active={active}
-                  title={term.cwd}
-                  onSelect={() => setActiveTerminal(term.id)}
-                  onClose={() => requestCloseTerminal(term.id)}
-                  closeLabel={t("Close {name}", { name: term.title })}
-                  closeTitle={term.alive ? t("Kill and close") : t("Close")}
-                  drag={dragProps(key)}
-                  onRename={() => setRenaming(term.id)}
-                  onMenu={(x, y) => setTabMenu({ id: term.id, x, y })}
-                  editing={
-                    renaming === term.id ? (
-                      <span className="flex items-center gap-1.5">
-                        <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-accent" : tone)} />
-                        <RenameField
-                          initial={term.title}
-                          onDone={(name) => {
-                            setRenaming(null);
-                            if (name !== null && name !== term.title) void renameTerminal(term.id, name);
-                          }}
-                        />
-                      </span>
-                    ) : undefined
-                  }
-                >
-                  <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-accent" : tone)} />
-                  <span className={cn("max-w-[130px] truncate", !term.alive && "line-through opacity-60")}>
-                    {term.title}
-                  </span>
-                  {attention[term.id] && (
-                    <span
-                      role="img"
-                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                      title={t("Claude finished while you were away")}
-                      aria-label={t("Claude finished while you were away")}
-                    />
-                  )}
-                </TabShell>
-              );
-            }
-            if (key.startsWith("p:")) {
-              const p = previews.find((x) => previewKey(x.id) === key);
-              if (!p) return null;
-              const active = showingPreview && p.id === activePreview;
-              const label = p.target.kind === "url" ? p.target.url.replace(/^https?:\/\//, "") : p.target.name;
-              const PreviewIcon = p.target.kind === "url" ? Globe : ImageIcon;
-              return (
-                <TabShell
-                  key={key}
-                  drag={dragProps(key)}
-                  active={active}
-                  title={p.id}
-                  onSelect={() => setActivePreview(p.id)}
-                  onClose={() => closePreview(p.id)}
-                  closeLabel={t("Close {name}", { name: label })}
-                  closeTitle={t("Close")}
-                >
-                  <PreviewIcon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-accent" : "text-low")} />
-                  <span className="max-w-[160px] truncate">{label}</span>
-                </TabShell>
-              );
-            }
-            const f = files.find((x) => fileKey(x.path) === key);
-            if (!f) return null;
-            const { Icon, tone } = fileGlyph(f.name);
-            const active = showingFile && f.path === activeFile;
-            const unsaved = f.content !== f.saved;
-            // the same state the tree shows, where you are actually editing
-            const status = gitStatus[relPath(cwd, f.path)];
-            const mark = status ? statusGlyph(status) : null;
-            return (
-              <TabShell
-                key={key}
-                drag={dragProps(key)}
-                active={active}
-                title={f.path}
-                onSelect={() => setActiveFile(f.path)}
-                onClose={() => requestCloseFile(f.path)}
-                closeLabel={t("Close {name}", { name: f.name })}
-                closeTitle={t("Close")}
-              >
-                <Icon className={cn("h-3.5 w-3.5 shrink-0", active ? "text-accent" : tone)} />
-                {f.readOnly && <Lock className="h-3 w-3 shrink-0 text-warn" />}
-                <span className={cn("max-w-[130px] truncate", !active && mark && mark.tone)}>{f.name}</span>
-                {mark && (
-                  <span
-                    className={cn("shrink-0 font-mono text-[10px]", active ? "text-accent" : mark.tone)}
-                    title={t(mark.label)}
-                    aria-label={t(mark.label)}
-                  >
-                    {mark.letter}
-                  </span>
-                )}
-                {unsaved && (
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t("Unsaved changes")} />
-                )}
-              </TabShell>
-            );
-          })}
-
-          {conflict && (
-            <TabShell
-              active={showingConflict}
-              title={conflict.path}
-              onSelect={() => useBench.setState({ focus: "conflict" })}
-              onClose={closeConflict}
-              closeLabel={t("Close {name}", { name: conflict.name })}
-              closeTitle={t("Close")}
-            >
-              <GitMerge className={cn("h-3.5 w-3.5 shrink-0", showingConflict ? "text-accent" : "text-warn")} />
-              <span className="max-w-[160px] truncate">{t("Resolve {name}", { name: conflict.name })}</span>
-            </TabShell>
-          )}
-
-          <NewTerminalMenu onPick={(kind) => void newTerminal(kind, cwd)} />
-          <ScriptsBar
-            projectId={projectId}
-            cwd={cwd}
-            onRun={(label, command) => void newTerminal("shell", cwd, { label, command })}
-          />
-          <TabMenu
-            at={tabMenu}
-            onClose={() => setTabMenu(null)}
-            onRename={() => {
-              if (tabMenu) setRenaming(tabMenu.id);
-              setTabMenu(null);
+      {ctx && layout ? (
+        <PaneCtx.Provider value={ctx}>
+          <PaneTree
+            node={layout.root}
+            onSizes={(splitId, sizes) => update((l) => setSizes(l, splitId, sizes))}
+            renderGroup={(id) => {
+              const g = groupById(layout, id);
+              return g ? <PaneGroupView group={g} /> : null;
             }}
           />
-        </div>
+        </PaneCtx.Provider>
+      ) : null}
+      <LinkPreviewPopover />
 
-        {showingFile && (
-          <button
-            type="button"
-            onClick={() => void saveFileAt(file.path)}
-            disabled={!dirty || file.readOnly}
-            title={file.readOnly ? t("Read-only") : t("Save (Ctrl+S)")}
-            className={cn(
-              "flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] transition-colors",
-              "focus-visible:outline-2 focus-visible:outline-accent",
-              dirty && !file.readOnly
-                ? "cursor-pointer bg-accent-soft text-accent hover:bg-accent-soft/70"
-                : "cursor-not-allowed text-text-3",
-            )}
-          >
-            <Save className="h-3 w-3" /> {t("Save")}
-          </button>
-        )}
-      </div>
-
-      <div className="relative min-h-0 flex-1">
-        {/* both stay mounted: an unmounted xterm loses its screen */}
-        <div
-          data-drop-zone="terminal"
-          className={cn(
-            "absolute inset-0",
-            (showingFile || showingConflict || showingPreview) && "invisible",
-            dropZone === "terminal" && "ring-2 ring-inset ring-accent",
-          )}
-        >
-          <TerminalPane />
-        </div>
-        <div
-          data-drop-zone="editor"
-          className={cn(
-            "absolute inset-0",
-            !showingFile && "invisible",
-            dropZone === "editor" && "ring-2 ring-inset ring-accent",
-          )}
-        >
-          <EditorPane />
-        </div>
-        {/* pinned previews stay mounted too: switching tabs must not reload a page */}
-        <div className={cn("absolute inset-0", !showingPreview && "invisible")}>
-          <PreviewPane previews={previews} active={showingPreview ? activePreview : null} />
-        </div>
-        {/* kept mounted while another tab is in front: the choices made so far live in it */}
-        {conflict && (
-          <div className={cn("absolute inset-0", !showingConflict && "invisible")}>
-            <ConflictView key={conflict.path} tab={conflict} root={cwd} />
-          </div>
-        )}
-      </div>
+      <TabMenu
+        at={tabMenu}
+        groups={groups}
+        splitBlocked={(edge) => (tabMenu ? splitBlocked(tabMenu.key, edge) : null)}
+        onClose={() => setTabMenu(null)}
+        onRename={() => {
+          if (tabMenu?.key.startsWith("t:")) setRenaming(tabMenu.key.slice(2));
+          setTabMenu(null);
+        }}
+        onSplit={(edge) => {
+          if (tabMenu) split(tabMenu.key, edge);
+          setTabMenu(null);
+        }}
+        onMove={(groupId) => {
+          if (tabMenu) update((l) => moveTab(l, tabMenu.key, groupId, "center"));
+          setTabMenu(null);
+        }}
+      />
 
       <Dialog open={!!pendingFile} onOpenChange={(o) => !o && setPending(null)}>
         <DialogContent title={t("Close without saving?")}>

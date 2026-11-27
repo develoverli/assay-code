@@ -5,11 +5,13 @@
  * never moved has no entry and goes at the end in opening order.
  */
 
-export type TabKey = `t:${string}` | `f:${string}` | `p:${string}`;
+export type TabKey = `t:${string}` | `f:${string}` | `p:${string}` | `c:${string}`;
 
 export const terminalKey = (id: string): TabKey => `t:${id}`;
 export const fileKey = (path: string): TabKey => `f:${path}`;
 export const previewKey = (id: string): TabKey => `p:${id}`;
+/** The conflict being resolved: one at a time, keyed by its path. */
+export const conflictKey = (path: string): TabKey => `c:${path}`;
 
 /** `keys` in the user's order; the ones never placed keep their own order, last. */
 export function orderTabs(keys: TabKey[], order: TabKey[]): TabKey[] {

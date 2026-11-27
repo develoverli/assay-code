@@ -168,18 +168,37 @@ export function fileUrlToPath(raw: string): { path: string; line: number } | nul
   return splitLocation(path);
 }
 
-/** What a preview shows: a slice of code, a picture, or a page. */
+/** A file that is looked at rather than read: shown at once on hover. */
+export type MediaKind = "image" | "video" | "audio";
+
+/** What a preview shows: a slice of code, a picture, a video or a sound, or a page. */
 export type PreviewTarget =
   | { kind: "code"; path: string; name: string; line: number }
-  | { kind: "image"; path: string; name: string }
+  | { kind: MediaKind; path: string; name: string }
   | { kind: "url"; url: string; local: boolean };
 
 export const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"]);
+/** What the webview can play on Windows, macOS and Linux alike, more or less. */
+export const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v", "ogv"]);
+export const AUDIO_EXT = new Set(["mp3", "wav", "ogg", "oga", "m4a", "aac", "flac", "opus"]);
 
-const extOf = (name: string): string => {
+export function isMedia(target: PreviewTarget): target is Extract<PreviewTarget, { kind: MediaKind }> {
+  return target.kind === "image" || target.kind === "video" || target.kind === "audio";
+}
+
+/** Which kind of media a file name is, or null when it is something to read. */
+export function mediaKindOf(name: string): MediaKind | null {
+  const ext = extOf(name);
+  if (IMAGE_EXT.has(ext)) return "image";
+  if (VIDEO_EXT.has(ext)) return "video";
+  if (AUDIO_EXT.has(ext)) return "audio";
+  return null;
+}
+
+function extOf(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
-};
+}
 
 /** `localhost`, `127.0.0.1`, `[::1]` and `0.0.0.0`: the dev server an agent just started. */
 export function isLocalUrl(raw: string): boolean {
@@ -193,7 +212,8 @@ export function isLocalUrl(raw: string): boolean {
 
 export function fileTarget(absolute: string, line: number): PreviewTarget {
   const name = absolute.split("/").pop() ?? absolute;
-  return IMAGE_EXT.has(extOf(name)) ? { kind: "image", path: absolute, name } : { kind: "code", path: absolute, name, line };
+  const media = mediaKindOf(name);
+  return media ? { kind: media, path: absolute, name } : { kind: "code", path: absolute, name, line };
 }
 
 export function urlTarget(url: string): PreviewTarget {

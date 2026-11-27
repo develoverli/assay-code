@@ -14,6 +14,7 @@ import {
   Search,
   ShieldAlert,
   SquareCode,
+  Tag,
 } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { probe, runTokens } from "@/lib/exec";
@@ -30,6 +31,8 @@ import { DeployPanel, useDeployBadge } from "@/features/deploy/DeployPanel";
 import { PortsPanel } from "@/features/ports/PortsPanel";
 import { useTunnelCount } from "@/features/ports/PortsChip";
 import { useApp } from "@/store/app";
+import { ReleasesPanel } from "@/features/releases/ReleasesPanel";
+import { useReleaseBadge } from "@/features/releases/useReleaseBadge";
 
 /**
  * The right dock: a rail of panels, always visible even when folded, plus
@@ -40,6 +43,7 @@ import { useApp } from "@/store/app";
 const PANELS: { id: DockPanel; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "search", label: "Search", icon: Search },
   { id: "git", label: "Git", icon: GitBranch },
+  { id: "releases", label: "Releases", icon: Tag },
   { id: "deploy", label: "Deploy", icon: CloudUpload },
   { id: "ports", label: "Ports", icon: RadioTower },
   { id: "conflicts", label: "Conflicts", icon: GitMerge },
@@ -126,6 +130,8 @@ function FilesMenu({ root }: { root: string }) {
 function railLabel(t: ReturnType<typeof useT>, id: DockPanel, label: string, badge: number): string {
   if (!badge) return label;
   if (id === "ports") return badge === 1 ? t("{label} (1 public link)", { label }) : t("{label} ({n} public links)", { label, n: badge });
+  if (id === "releases")
+    return badge === 1 ? t("{label} (1 change to release)", { label }) : t("{label} ({n} changes to release)", { label, n: badge });
   return t("{label} ({n})", { label, n: badge });
 }
 
@@ -139,6 +145,7 @@ export function DockRail() {
   const projectId = useApp((s) => s.activeProjectId);
   const deploy = useDeployBadge(projectId ?? "");
   const publicLinks = useTunnelCount(projectId ?? "");
+  const releasable = useReleaseBadge(projectId);
 
   return (
     <nav
@@ -170,6 +177,8 @@ export function DockRail() {
         if (p.id === "deploy") badge = deploy.pending;
         // links that make this machine reachable from the internet right now
         if (p.id === "ports") badge = publicLinks;
+        // features and fixes since the last release: what would ship if you cut one now
+        if (p.id === "releases") badge = releasable;
         return (
           <button
             type="button"
@@ -194,7 +203,7 @@ export function DockRail() {
                 aria-hidden
                 className={cn(
                   "tnum absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-0.5 text-[9px] font-semibold leading-none",
-                  p.id === "deploy" ? "bg-accent text-accent-fg" : "bg-warn text-bg",
+                  p.id === "deploy" || p.id === "releases" ? "bg-accent text-accent-fg" : "bg-warn text-bg",
                 )}
               >
                 {badge}
@@ -234,6 +243,7 @@ export function DockPanelBody({
   let heading = rootName;
   if (dock === "findings") heading = t("Findings");
   else if (dock === "git") heading = t("Git");
+  else if (dock === "releases") heading = t("Releases");
   else if (dock === "deploy") heading = t("Deploy");
   else if (dock === "ports") heading = t("Ports");
   else if (dock === "conflicts") heading = t("Conflicts");
@@ -264,6 +274,7 @@ export function DockPanelBody({
 
       {dock === "findings" && <FindingsPanel root={root} projectId={projectId} />}
       {dock === "git" && <GitPanel root={root} />}
+      {dock === "releases" && <ReleasesPanel projectId={projectId} root={root} />}
       {dock === "deploy" && project && <DeployPanel project={project} />}
       {dock === "ports" && <PortsPanel projectId={projectId} />}
       {dock === "conflicts" && <ConflictsPanel root={root} />}

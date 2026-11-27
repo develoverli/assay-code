@@ -43,7 +43,8 @@ src/
     ui/                    primitives, dialog, data-table, severity, terminal
   features/                one folder per view: projects, tools, findings, bench, audit,
                            skills, commands, processes, stats, settings, shared; plus ports
-                           (Workspace's Ports panel) and updates (the header's update chip)
+                           (Workspace's Ports panel), releases (Workspace's Releases panel)
+                           and updates (the header's update chip)
   lib/
     exec.ts                spawn tools via tauri-plugin-shell, stream stdout/stderr
     runner.ts              run orchestration (start, stream, persist)
@@ -66,7 +67,8 @@ src/
     pty.ts                 front half of the Rust PTY sessions
     agent-signals.ts       Claude's Stop hook and status line, as events per terminal
     claude-limits.ts       how plan limits read in the status bar (tone, reset, countdown)
-    tab-order.ts           the Workspace tab strip in the user's order
+    tab-order.ts           tab keys (terminal, file, preview, conflict) and their order
+    pane-layout.ts         Workspace's split panes as a tree: move, split, close, sizes, restore
     scripts.ts             the project's own scripts (package.json, Cargo, Makefile, composer)
     bench-term.ts          shell detection + terminal launchers (Claude, OpenCode, Hermes)
     clipboard.ts           copy/paste that survives the webview, for terminals and text fields
@@ -79,6 +81,9 @@ src/
     deploy.ts              Deploy: sftp.json in and out, the change list, the calls into deploy.rs
     ports.ts               Ports: which rows a project shows, when a quiet link closes, the calls
     updater.ts             self-update: settings, intervals, install kind, release links
+    commit-style.ts        commit style per project, the prompts behind Write with AI, the
+                           release-please subject check and Fix order
+    releases.ts            last tag, commits since, next version (release-please's rules)
     sessions.ts            Claude Code transcripts on disk for a project
     code-search.ts         content search via ripgrep / git grep / grep, whichever exists
     monaco.ts              Monaco workers + the theme built from the design tokens
@@ -91,7 +96,9 @@ src/
                            claude-usage.ts (plan limits and context per terminal),
                            deploy.ts (servers, pending changes, uploads, folder watchers),
                            ports.ts (listening ports, hand-added ports, public links),
-                           updater.ts (the version found, download, install now or on quit)
+                           updater.ts (the version found, download, install now or on quit),
+                           releases.ts (release summary per project, GitHub's release PR),
+                           panes.ts (Workspace's split layout per project)
   i18n/es.ts               Spanish dictionary (English is the key, so it needs none)
   styles/globals.css       design tokens (dark-first) + frame styling
 src-tauri/
@@ -422,9 +429,9 @@ existed), and then the pill is simply absent.
 ## Workspace (the `bench` view)
 
 A real shell on the active project, with the code beside it (empty state when the project has no
-local folder). The work area on the left has **one tab strip**: terminals and open files sit in it
-together, and the surface below shows whichever is selected (both stay mounted — an unmounted xterm
-loses its screen, an unmounted Monaco its cursor). The right is a dock: a rail that is always visible
+local folder). The work area on the left is split into **panes** (see *Split panes* below), each with
+its own tab strip where terminals, open files, pinned previews and a conflict sit together, and a
+surface that shows the one in front. The right is a dock: a rail that is always visible
 (Files · Search · Findings) plus the open panel, resizable, folded only by the button in its header.
 A footer is the view's whole status line — the shell's own `StatusBar` is not mounted on Workspace
 (when the project has a folder), so nothing is said twice. Left, where the path used to be, Claude's
@@ -491,12 +498,46 @@ folders in, and a line at the foot names how many are hidden (`4 folders hidden 
 dist…) · Show`), only at the root, since counting deeper would mean walking the tree the laziness
 exists to avoid. Monaco saves only on Ctrl+S and warns when the file changed on disk.
 
-The tab strip is in the user's order. `lib/tab-order` keeps one list of keys (`t:<id>`, `f:<path>`)
-for every project, and a tab never moved sits at the end in the order it opened, so opening one
-never writes there. Tabs are dragged with pointer events, not HTML5 drag and drop: Tauri takes drops
-at the OS level for desktop files, which on Windows leaves the webview's own `dragover`/`drop`
-silent. `Ctrl+Shift+PageUp/PageDown` moves the tab in front one place — not the arrows, which the
-editor and every shell use to select words. A terminal tab is renamed with a double-click or its
+### Split panes
+
+`lib/pane-layout.ts` (pure, tested) is a tree: a **group** is one pane — its tabs in the strip's order
+and the one in front — and a **split** lays its children in a row or a column with a share each. Every
+tab (`t:<id>`, `f:<path>`, `p:<id>`, `c:<path>` from `lib/tab-order`) lives in exactly one group, so a
+file is never open in two panes, whose unsaved edits would overwrite each other on save. A group left
+empty closes, a split left with one child is replaced by it, and a split inside one going the same
+way is folded into it. `store/panes.ts` keeps one layout per project in the settings table
+(`bench.layout.<project id>`, debounced), so a project switch, a dev reload or a restart puts the
+panes back; `reconcile` drops what no longer exists (a terminal that died with the last run) and
+adopts tabs no pane holds into the active one.
+
+Dragging a tab (pointer events, captured once the drag starts so a terminal or a pinned page under
+the pointer cannot swallow it, never HTML5 drag and drop, which Tauri silences on Windows): onto
+another tab reorders, or joins that pane before it; onto a strip joins at the end; onto a surface,
+the outer quarter on each side splits that pane with the tab in a new pane on that side, drawn as an
+`accent` overlay while the drag is in flight, and the middle joins it. A split that would leave a
+pane under 240×120 px is not offered at all, and neither is a pane's only tab onto its own pane.
+Dividers are dragged (or nudged with the arrows when focused) and held at that same minimum.
+
+The **active** pane is where new tabs open (a terminal, a file from the tree or a link, a script)
+and what the keyboard talks to; with more than one pane its strip carries a 2 px `accent` line.
+`Ctrl+\` (by physical key too, since `\` needs AltGr on Spanish layouts) splits its front tab to the
+right, `Ctrl+Alt+arrows` walk to the neighbouring pane (`neighbourGroup`, from the panes' rectangles),
+`Ctrl+Shift+PageUp/PageDown` moves the front tab inside its pane (not the arrows, which the editor and
+every shell use to select words), and `Ctrl+W` closes it. Every tab's right-click menu offers Split
+right, Split down (disabled with the reason) and Move to panel N. Each strip has its own `+` and ▶;
+only the active one answers `Ctrl+Shift+R`.
+
+The store still says which tab is in front (`focus` + `activeTerminal` / `activeFile` /
+`activePreview`), because the rest of the app reads it; it means the front of the **active** pane.
+`WorkArea` keeps the two in step with one effect: a move in the layout (a drag, a close, a click on
+another pane) wins and is written to the store, and a change in the store alone (a file opened from
+the tree, a new terminal) is brought into the layout. Terminals are re-hosted, not remounted: each
+session's xterm node lives outside React and `TerminalSlot` moves it into whichever pane shows it,
+so moving a terminal restarts nothing. Each pane has its own Monaco over shared models
+(`EditorPane`), so a file moved across keeps its undo history and its cursor. A pinned page or a
+conflict moved to another pane does remount.
+
+A terminal tab is renamed with a double-click or its
 right-click menu; `pty_rename` keeps the name in Rust beside the one it was spawned with, so a reload
 brings it back and an empty name restores the original. File tabs are not renamable: that would
 read as renaming the file. Terminals are PTYs owned by Rust and keyed by id, so leaving the view, hiding to the
@@ -516,6 +557,16 @@ Terminals carry link providers (`features/bench/terminal-links.ts`): **Ctrl/Cmd+
 `path:line` an agent printed opens it in the editor at that line, and on a URL opens the browser.
 Plain clicks are left alone — a terminal has to keep selecting text — and a path is only a link when
 the file actually exists on disk.
+
+Resting the pointer on a link opens a popover (`LinkPreview.tsx`). **Media** — a picture, a video or
+a sound (`mediaKindOf`) — is shown at once, since looking at it is the point; video and audio carry
+the player's controls and never play on their own, and a file over 200 MB is not read into memory
+for a hover. **Code and pages** get a bar instead: *Open here* (the editor at the line, or a pinned
+tab for a page), *Preview*, which renders the slice of code or the page only when pressed, *Open in
+browser* for a URL, *Show in folder* for a file, and copy. Loading a page — a dev server's whole app —
+every time the pointer crossed a link was heavy and got in the way. There is no "open with the system
+app" for a file: that needs the opener's path permission beyond `**/graphify-out/*`. The popover
+closes when the terminal that printed the link is no longer the front of any pane.
 
 Copy and paste work the way a terminal's do, and `lib/clipboard.ts` is what makes them work inside a
 webview — it reads the clipboard through Rust (`plugin:clipboard-manager|read_text`) and falls back to
@@ -574,9 +625,10 @@ it, reads each file, deletes it and emits an event.
 - **Stop hook** — writes `<pty id>.<pid>.stop` at the end of every turn; `agent://stop` carries the
   first line of `last_assistant_message`. `bench.agentStopped` marks the tab with an `accent` dot when
   that terminal is not what the user is looking at (window focused, Workspace open, that tab in
-  front), and — when notifications are on and `notify.agents` is not off — sends
-  `Claude finished · <project> › <tab>`. Looking at it is silence, since the hook fires every turn.
-  Opening the tab, or focusing the window with it in front, clears the dot.
+  front of **any** pane — `panes.visibleTerminals`, since a split shows several at once), and — when
+  notifications are on and `notify.agents` is not off — sends `Claude finished · <project> › <tab>`.
+  Looking at it is silence, since the hook fires every turn. Opening the tab, or focusing the window
+  while it is in front of a pane (`bench.seeTerminals`), clears the dot.
 - **Status line** — the plan limits and the context only reach Claude's status line, so the same
   settings file sets one. It saves its input as `<pty id>.status` (written aside and moved, so the
   watcher never reads half of one) and then pipes the same input to the user's own status line from
@@ -594,6 +646,66 @@ it, reads each file, deletes it and emits an event.
 Only Claude has these hooks; OpenCode and Hermes get neither flag. The user's status line is read
 once per run, so changing it needs a restart of Assay, and a project-level `statusLine` is not
 chained.
+
+## Commit style
+
+Write with AI used to answer in one shape for every repository, gitmoji first (`✨ feat: …`). That
+is exactly what release-please cannot read: it parses a subject only when the type comes first, so in
+a repository it manages those commits never reach the changelog and never cut a release, silently.
+So the shape is now per project (`commit_style`, migration 015), and `lib/commit-style.ts` owns it:
+
+- **Auto** (NULL, and every project from before) asks the folder: `release-please-config.json` or
+  `.release-please-manifest.json` at the root means **release-please** (`feat(scope): ✨ …`),
+  anything else means **Gitmoji first**. The project dialog can force either one, or **Custom
+  prompt**, whose text lives in `commit_prompt` beside it. A custom style with an empty prompt
+  falls back to the gitmoji one.
+- The two shared prompts are editable in Settings › AI › **Commit message prompts**, saved on blur,
+  with **Restore default**. Saving the default text stores nothing, so a later improvement to the
+  default still reaches it. The diff is always appended by Assay (`buildCommitPrompt`), never
+  written into a prompt, and the answer is still cut to its first line.
+- In a release-please project the Git panel checks the subject as it is typed
+  (`checkReleasePleaseSubject`): emoji first or no type at all gets a `warn` line under the box, and
+  emoji first also gets **Fix order** (`fixTypeOrder`: `✨ feat(x): y` → `feat(x): ✨ y`). It warns
+  and never blocks: a commit release-please skips is still a valid commit, and blocking is the
+  repository's own `commit-msg` hook's job. Merges, reverts and fixups git wrote are left alone.
+
+`parseSubject` reads both orders (and `:shortcode:` gitmoji), because old history mixes them.
+
+## Releases
+
+The **Releases** panel in Workspace's dock answers *when to cut a release and what it will be
+called*. `lib/releases.ts` reads the newest root tag reachable from HEAD (`v1.2.3` or `1.2.3`; a
+package's `web-v1.2.3` is not the project's version), the commits since, sorts them into Features,
+Fixes (`fix`, `perf`, `revert`, `deps`), Other changes and the ones without a readable type, and
+predicts the next version with release-please's default versioning: breaking → major, feature →
+minor, anything fix-like → patch, nothing releasable → no release. A project never tagged proposes
+`v0.1.0`. The rail badge counts the releasable commits, re-read when the project or its working tree
+changes; it is local git only.
+
+The panel runs in one of two modes. **release-please** applies when the project's style resolves to
+it or its files are there whatever the style: the prediction honours `bump-minor-pre-major` and
+`bump-patch-for-minor-pre-major` (top level, overridden by `packages["."]`), the current version is
+the manifest's, and emoji-first commits are listed as **ignored by release-please** with the reason.
+Assay never releases in that mode, the action does. What GitHub knows is read with the linked
+account (`fetchReleaseInfo`: the open pull request labelled `autorelease: pending`, and
+`/releases/latest`), two GETs on opening the panel, switching project, or **Read again**, never on a
+heartbeat. Without an account, or with a remote outside github.com, the panel shows what is local
+and says why the rest is missing. Monorepos are read for the root package only; the other packages
+are listed with their manifest version and a line saying per-package prediction is not done.
+
+**Tag releases** is everything else, this repository included: **Create tag** makes an annotated
+tag on HEAD (`git tag -a <v> -m <v>`) and pushes it alone (`git push <remote> refs/tags/<v>`, with
+the linked account on a github.com https remote, like push). The name starts as the prediction and is
+editable, keeping the prefix the existing tags use. It is off, with the reason written under it,
+while the tree is dirty, the branch was never pushed or has commits not pushed: a tag on a commit the
+remote lacks would start a release workflow on code it cannot see. Version files that disagree
+(`package.json`, `Cargo.toml`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`) get a `warn`
+line; Assay never edits them, because bumping is each repository's own script (here
+`pnpm version:bump`). The confirmation shows both commands before anything runs. A tag created but
+refused by the remote is said as exactly that, with the command to push it by hand.
+
+Links (the release PR, the newest release, the tag just pushed) are one line each with **Copy** and
+**Open in the browser**, never a preview.
 
 ## Deploy
 
