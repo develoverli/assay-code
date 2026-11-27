@@ -8,6 +8,8 @@ release may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-26
+
 ### Added
 
 - Commit style per project: Write with AI puts the type first (`feat(scope): ✨ …`) in repositories
@@ -103,6 +105,7 @@ First open-source release.
 
 - The built-in `sane-stack` skill.
 
-[Unreleased]: https://github.com/develoverli/assay-code/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/develoverli/assay-code/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/develoverli/assay-code/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/develoverli/assay-code/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/develoverli/assay-code/releases/tag/v0.1.0
